@@ -1,0 +1,8 @@
+{
+  "name": "NellsBotBase WhatsApp & Telegram Bot",
+  "description": "Multi-session WhatsApp bot with Telegram management dashboard, Baileys integration, and extensible plugin architecture.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

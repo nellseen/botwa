@@ -1,0 +1,26 @@
+{
+  "sess_4b49fd31e9f14951": {
+    "sessionId": "sess_4b49fd31e9f14951",
+    "userId": "999999999",
+    "phoneNumber": "",
+    "createdAt": "2026-09-16T05:32:48.558Z"
+  },
+  "sess_a518443d9f2044dd": {
+    "sessionId": "sess_a518443d9f2044dd",
+    "userId": "999999999",
+    "phoneNumber": "Legacy_Number",
+    "createdAt": "2026-09-16T05:38:56.902Z"
+  },
+  "sess_420ffdf2401c45df": {
+    "sessionId": "sess_420ffdf2401c45df",
+    "userId": "999999999",
+    "phoneNumber": "Legacy_Number",
+    "createdAt": "2026-09-16T05:44:05.678Z"
+  },
+  "sess_354bf2e013304a84": {
+    "sessionId": "sess_354bf2e013304a84",
+    "userId": "999999999",
+    "phoneNumber": "Legacy_Number",
+    "createdAt": "2026-09-16T05:44:24.598Z"
+  }
+}
