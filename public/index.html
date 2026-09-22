@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="id" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NellsBot - Multi-Session WhatsApp Bot via Telegram</title>
+  <meta name="description" content="Kini login banyak nomor WhatsApp di bot Telegram makin praktis tanpa ribet. Didukung auto-reconnect cerdas, pairing code instan, dan plugin lengkap by NellsBot.">
+  <meta property="og:title" content="NellsBot - Multi-Session WhatsApp Bot via Telegram">
+  <meta property="og:description" content="Platform WhatsApp Bot multi-nomor pertama yang dikendalikan penuh lewat Telegram tanpa scan QR. Login bot sekarang di @walogin1_bot.">
+  
+  <!-- Google Fonts: Syne, Plus Jakarta Sans, Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS CDN for high-end utility styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            display: ['"Outfit"', 'sans-serif'],
+            brand: ['"Syne"', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              gold: '#F59E0B',
+              goldLight: '#FCD34D',
+              goldDark: '#B45309',
+              emerald: '#10B981',
+              emeraldLight: '#34D399',
+              emeraldDark: '#047857',
+              dark: '#07090E',
+              card: '#0D121F',
+              cardHover: '#131B2E',
+              border: '#1E293B',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Luxury Glass and Mesh Gradients */
+    body {
+      background-color: #07090E;
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(16, 185, 129, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 85% 25%, rgba(245, 158, 11, 0.07) 0%, transparent 45%),
+        radial-gradient(circle at 50% 85%, rgba(16, 185, 129, 0.06) 0%, transparent 50%);
+      background-attachment: fixed;
+    }
+    
+    .gold-glow {
+      box-shadow: 0 0 35px -5px rgba(245, 158, 11, 0.35);
+    }
+    
+    .emerald-glow {
+      box-shadow: 0 0 35px -5px rgba(16, 185, 129, 0.35);
+    }
+    
+    .gold-gradient-text {
+      background: linear-gradient(135deg, #FFFFFF 20%, #FCD34D 60%, #F59E0B 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .emerald-gradient-text {
+      background: linear-gradient(135deg, #34D399 20%, #10B981 70%, #059669 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .luxury-border {
+      border: 1px solid rgba(245, 158, 11, 0.2);
+    }
+
+    .shimmer-btn {
+      background: linear-gradient(90deg, #10B981 0%, #059669 50%, #10B981 100%);
+      background-size: 200% auto;
+      animation: shimmer 4s linear infinite;
+    }
+
+    @keyframes shimmer {
+      to { background-position: 200% center; }
+    }
+
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #0D121F;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #1E293B;
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="text-slate-100 antialiased selection:bg-brand-emerald selection:text-black min-h-screen flex flex-col justify-between">
+
+  <!-- TOP ANNOUNCEMENT BAR -->
+  <div id="top-announcement" class="bg-gradient-to-r from-amber-950/40 via-emerald-950/50 to-amber-950/40 border-b border-amber-500/20 py-2.5 px-4 text-center text-xs sm:text-sm font-medium text-amber-200/90 flex items-center justify-center gap-2">
+    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-400/30">NEW UPDATE</span>
+    <span>Sekarang bisa login banyak nomor WhatsApp via Telegram tanpa ribet!</span>
+    <a href="https://t.me/walogin1_bot" target="_blank" rel="noopener noreferrer" class="underline hover:text-white font-semibold flex items-center gap-1 ml-1 text-emerald-300">
+      Coba Sekarang 
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+    </a>
+  </div>
+
+  <!-- NAVIGATION HEADER -->
+  <header id="main-header" class="sticky top-0 z-50 backdrop-blur-xl bg-[#07090E]/80 border-b border-slate-800/80">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+      
+      <!-- Brand Logo -->
+      <a href="#" id="brand-logo-link" class="flex items-center gap-3 group">
+        <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500/20 via-emerald-500/20 to-slate-900 border border-amber-500/30 flex items-center justify-center p-0.5 group-hover:border-emerald-400 transition-colors duration-300">
+          <div class="w-full h-full bg-[#0B0F19] rounded-[10px] flex items-center justify-center">
+            <!-- Luxury Bot Icon -->
+            <svg class="w-6 h-6 text-emerald-400 group-hover:text-amber-300 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2v2"></path>
+              <rect x="4" y="6" width="16" height="12" rx="2"></rect>
+              <path d="M2 14h2"></path>
+              <path d="M20 14h2"></path>
+              <path d="M15 13v2"></path>
+              <path d="M9 13v2"></path>
+            </svg>
+          </div>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-brand font-black text-xl tracking-wider text-white">NELLS<span class="text-amber-400">BOT</span></span>
+            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase tracking-wider">Multi-WA</span>
+          </div>
+          <p class="text-[11px] text-slate-400 font-medium">Next-Gen WhatsApp Architecture</p>
+        </div>
+      </a>
+
+      <!-- Center Status Badge -->
+      <div id="header-status-indicator" class="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/90 border border-slate-800 text-xs text-slate-300">
+        <span class="relative flex h-2.5 w-2.5">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+        </span>
+        <span>Telegram Server: <strong class="text-emerald-400 font-medium">ONLINE (v1.0)</strong></span>
+      </div>
+
+      <!-- Action Button -->
+      <div class="flex items-center gap-3">
+        <a id="header-telegram-btn" href="https://t.me/walogin1_bot" target="_blank" rel="noopener noreferrer" class="relative inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-slate-950 font-bold text-xs sm:text-sm tracking-wide shadow-lg shadow-emerald-950/50 hover:shadow-emerald-500/20 transition-all duration-300 active:scale-95">
+          <!-- Telegram Icon -->
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221l-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.446 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.121l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.535-.194 1.006.131.832.922z"/>
+          </svg>
+          <span>Login Bot Sekarang</span>
+        </a>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- HERO SECTION -->
+  <main class="flex-grow">
+    <section id="hero-section" class="relative pt-12 pb-20 lg:pt-20 lg:pb-32 overflow-hidden">
+      <!-- Glow ambient lights -->
+      <div class="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-emerald-500/10 blur-[130px] pointer-events-none rounded-full"></div>
+      <div class="absolute top-1/3 left-1/3 w-[350px] h-[250px] bg-amber-500/10 blur-[110px] pointer-events-none rounded-full"></div>
+
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+        
+        <!-- Header Text Block -->
+        <div class="text-center max-w-3xl mx-auto">
+          
+          <!-- Badge Pill -->
+          <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-500/10 via-emerald-500/10 to-amber-500/10 border border-amber-500/30 text-xs sm:text-sm font-semibold text-amber-300 mb-6">
+            <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+            <span>EKSKLUSIF KARYA NELL • MULTI-SESSION WA TERBARU</span>
+          </div>
+
+          <!-- Main Title -->
+          <h1 class="font-display font-extrabold text-4xl sm:text-5xl lg:text-6xl tracking-tight text-white leading-[1.15] mb-6">
+            Kelola Banyak Nomor <br class="hidden sm:inline" />
+            <span class="emerald-gradient-text">WhatsApp di Telegram</span><br />
+            <span class="gold-gradient-text">Sekarang Tanpa Ribet!</span>
+          </h1>
+
+          <!-- Subtitle -->
+          <p class="text-base sm:text-lg text-slate-300 font-normal leading-relaxed mb-10 max-w-2xl mx-auto">
+            Tak perlu scan QR dua perangkat, tak perlu setup VPS rumit. Cukup gunakan <strong class="text-white font-medium">Pairing Code instan</strong> langsung di bot Telegram kami. Tambahkan 1, 5, atau puluhan nomor WhatsApp Anda secara terpisah dan otomatis online 24/7!
+          </p>
+
+          <!-- Primary Hero CTA -->
+          <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-14">
+            <a id="hero-main-cta-btn" href="https://t.me/walogin1_bot" target="_blank" rel="noopener noreferrer" class="w-full sm:w-auto inline-flex items-center justify-center gap-3 px-8 py-4 rounded-2xl bg-gradient-to-r from-emerald-400 via-emerald-500 to-teal-400 hover:from-emerald-300 hover:to-teal-300 text-slate-950 font-black text-base tracking-wide shadow-xl shadow-emerald-500/20 hover:shadow-emerald-400/40 transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0">
+              <svg class="w-5 h-5 text-slate-950" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221l-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.446 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.121l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.535-.194 1.006.131.832.922z"/>
+              </svg>
+              <span>LOGIN BOT SEKARANG</span>
+              <svg class="w-4 h-4 text-slate-900" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M17 8l4 4m0 0l-4 4m4-4H3"></path></svg>
+            </a>
+
+            <a href="#how-it-works" id="hero-secondary-btn" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-7 py-4 rounded-2xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 font-semibold text-base border border-slate-700/80 hover:border-slate-600 transition-colors duration-200">
+              <span>Lihat Cara Kerja</span>
+              <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+            </a>
+          </div>
+
+          <!-- Feature Highlights Mini Badges -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-3xl mx-auto pt-4 border-t border-slate-800/80 text-left">
+            <div class="p-3 rounded-xl bg-slate-900/50 border border-slate-800/60">
+              <span class="block text-emerald-400 font-bold text-lg sm:text-xl font-display">Multi-Session</span>
+              <span class="text-xs text-slate-400">Bebas tambah banyak nomor</span>
+            </div>
+            <div class="p-3 rounded-xl bg-slate-900/50 border border-slate-800/60">
+              <span class="block text-amber-400 font-bold text-lg sm:text-xl font-display">&lt; 5 Detik</span>
+              <span class="text-xs text-slate-400">Pairing code kilat di HP</span>
+            </div>
+            <div class="p-3 rounded-xl bg-slate-900/50 border border-slate-800/60">
+              <span class="block text-emerald-400 font-bold text-lg sm:text-xl font-display">Auto-Reconnect</span>
+              <span class="text-xs text-slate-400">Tahan restart (Error 515)</span>
+            </div>
+            <div class="p-3 rounded-xl bg-slate-900/50 border border-slate-800/60">
+              <span class="block text-amber-400 font-bold text-lg sm:text-xl font-display">100% Cloud</span>
+              <span class="text-xs text-slate-400">Tanpa beban baterai HP</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- INTERACTIVE TELEGRAM BOT SHOWCASE / SIMULATION -->
+        <div id="interactive-preview" class="mt-16 max-w-4xl mx-auto">
+          <div class="rounded-3xl bg-gradient-to-b from-slate-800/60 via-slate-900/90 to-[#0A0E18] p-1.5 shadow-2xl border border-slate-700/60">
+            <div class="rounded-[22px] bg-[#0B0F19] overflow-hidden">
+              
+              <!-- Telegram Window Header -->
+              <div class="bg-[#111726] px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <!-- Bot Avatar -->
+                  <div class="relative w-10 h-10 rounded-full bg-gradient-to-tr from-emerald-500 to-amber-400 p-0.5 flex items-center justify-center">
+                    <div class="w-full h-full bg-slate-900 rounded-full flex items-center justify-center text-emerald-400 font-bold font-brand text-xs">
+                      NELL
+                    </div>
+                    <span class="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full border-2 border-slate-900"></span>
+                  </div>
+                  <div>
+                    <div class="flex items-center gap-1.5">
+                      <h3 class="font-bold text-sm text-white">NellsBotBase Manager</h3>
+                      <svg class="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                      <span class="text-[10px] font-semibold text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded">bot</span>
+                    </div>
+                    <p class="text-xs text-emerald-400/90 font-mono">@walogin1_bot • Multi-Session Engine</p>
+                  </div>
+                </div>
+
+                <!-- Window buttons -->
+                <div class="flex items-center gap-2">
+                  <a href="https://t.me/walogin1_bot" target="_blank" rel="noopener noreferrer" class="text-xs font-semibold px-3 py-1 rounded-lg bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 border border-emerald-500/30 transition-colors flex items-center gap-1.5">
+                    <span>Buka di Telegram</span>
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                  </a>
+                </div>
+              </div>
+
+              <!-- Telegram Chat Simulation Body -->
+              <div class="p-6 space-y-4 font-sans text-sm bg-[radial-gradient(#1E293B_1px,transparent_1px)] [background-size:16px_16px] bg-[#070A11] min-h-[380px] flex flex-col justify-end">
+                
+                <!-- Chat Message 1: User -->
+                <div class="flex justify-end">
+                  <div class="bg-emerald-600/90 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-[85%] sm:max-w-md shadow-md">
+                    <p class="font-mono text-sm">/start</p>
+                    <span class="text-[10px] text-emerald-200 block text-right mt-1">12:00</span>
+                  </div>
+                </div>
+
+                <!-- Chat Message 2: Bot Menu Response -->
+                <div class="flex justify-start">
+                  <div class="bg-[#151D2F] border border-slate-700/60 text-slate-200 rounded-2xl rounded-tl-sm px-4 py-3 max-w-[90%] sm:max-w-md shadow-lg">
+                    <p class="font-bold text-emerald-400 mb-1">⚡ Selamat datang di NellsBotBase Dashboard!</p>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                      ID Anda: <code class="text-amber-300 bg-black/40 px-1 py-0.5 rounded">9988123</code><br>
+                      Gunakan menu keyboard untuk menambah dan mengontrol koneksi WhatsApp Anda:
+                    </p>
+                    <div class="grid grid-cols-2 gap-2 mt-3 pt-2 border-t border-slate-700/60 text-xs text-center font-medium">
+                      <div class="bg-slate-800/80 p-2 rounded-lg text-slate-200">📱 Nomor Saya</div>
+                      <div class="bg-emerald-950/60 border border-emerald-500/40 p-2 rounded-lg text-emerald-300 font-bold">➕ Tambah Nomor</div>
+                      <div class="bg-slate-800/80 p-2 rounded-lg text-slate-200">🟢 Status Online</div>
+                      <div class="bg-slate-800/80 p-2 rounded-lg text-slate-200">📊 Statistik</div>
+                    </div>
+                    <span class="text-[10px] text-slate-500 block text-right mt-2">12:00</span>
+                  </div>
+                </div>
+
+                <!-- Chat Message 3: User sends phone number -->
+                <div class="flex justify-end">
+                  <div class="bg-emerald-600/90 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-[85%] sm:max-w-md shadow-md">
+                    <p class="font-mono text-sm">6285199553371</p>
+                    <span class="text-[10px] text-emerald-200 block text-right mt-1">12:01</span>
+                  </div>
+                </div>
+
+                <!-- Chat Message 4: Bot Instant Pairing Code -->
+                <div class="flex justify-start">
+                  <div class="bg-[#151D2F] border border-emerald-500/40 text-slate-200 rounded-2xl rounded-tl-sm p-4 max-w-[90%] sm:max-w-md shadow-xl relative overflow-hidden">
+                    <div class="absolute top-0 right-0 px-3 py-1 bg-amber-500 text-slate-950 font-black text-[10px] uppercase rounded-bl-xl tracking-wider">
+                      INSTANT CODE
+                    </div>
+                    <p class="font-bold text-white text-sm mb-1 flex items-center gap-1.5">
+                      <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
+                      🔵 PAIRING CODE WHATSAPP
+                    </p>
+                    <p class="text-xs text-slate-300 mb-2.5">
+                      Nomor: <span class="font-mono text-white">6285199553371</span>
+                    </p>
+                    
+                    <!-- Code Box with Copy Indicator -->
+                    <div class="bg-[#0A0F1A] border border-amber-500/50 rounded-xl p-3 text-center my-2">
+                      <span class="text-xs text-slate-400 block mb-0.5">Masukkan kode ini di WhatsApp Anda:</span>
+                      <span class="font-mono text-2xl font-black tracking-widest text-amber-300 select-all">8492-3108</span>
+                    </div>
+
+                    <p class="text-[11px] text-slate-400 mt-2 leading-relaxed">
+                      👉 Buka WhatsApp &gt; <strong>Perangkat Tertaut</strong> &gt; <strong>Tautkan Perangkat</strong> &gt; <strong>Tautkan dengan nomor telepon saja</strong>.
+                    </p>
+
+                    <!-- Status Result Confirmation -->
+                    <div class="mt-3 p-2 bg-emerald-950/60 border border-emerald-500/30 rounded-lg flex items-center justify-between text-xs">
+                      <span class="flex items-center gap-1.5 text-emerald-300 font-semibold">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400"></span> Status: ONLINE
+                      </span>
+                      <span class="text-slate-400 text-[11px]">12:02 • Siap Pakai!</span>
+                    </div>
+
+                    <span class="text-[10px] text-slate-500 block text-right mt-2">12:02</span>
+                  </div>
+                </div>
+
+              </div>
+
+              <!-- Interactive Simulated CTA Bar -->
+              <div class="bg-[#0E1424] p-4 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                <div class="flex items-center gap-2 text-slate-300">
+                  <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                  <span>Ingin mencoba langsung nomor WhatsApp Anda sekarang?</span>
+                </div>
+                <a href="https://t.me/walogin1_bot" target="_blank" rel="noopener noreferrer" class="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-bold text-center transition-all shadow-md">
+                  Buka @walogin1_bot Sekarang →
+                </a>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- CORE FEATURES GRID -->
+    <section id="features" class="py-20 bg-[#07090E] border-t border-slate-800/70 relative">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        
+        <div class="text-center max-w-2xl mx-auto mb-16">
+          <span class="text-xs font-bold text-amber-400 uppercase tracking-widest bg-amber-400/10 px-3 py-1 rounded-full border border-amber-400/20">Fitur Utama NellsBot</span>
+          <h2 class="font-display font-black text-3xl sm:text-4xl text-white mt-3 mb-4">
+            Didesain Khusus untuk Efisiensi & Kemudahan Maksimal
+          </h2>
+          <p class="text-sm sm:text-base text-slate-400">
+            Semua kerumitan teknis bot WhatsApp telah disederhanakan oleh Nell sehingga Anda tinggal pakai lewat Telegram.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          
+          <!-- Card 1 -->
+          <div id="feature-multi-session" class="rounded-2xl bg-[#0D121F] p-7 border border-slate-800 hover:border-emerald-500/40 transition-all duration-300 hover:-translate-y-1 group">
+            <div class="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-5 group-hover:bg-emerald-500 group-hover:text-slate-950 transition-colors">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+            </div>
+            <h3 class="font-display font-bold text-lg text-white mb-2">Multi-Session Tanpa Batas</h3>
+            <p class="text-sm text-slate-400 leading-relaxed">
+              Tambahkan banyak nomor WhatsApp sekaligus di dalam satu akun Telegram. Cocok untuk admin grup, toko online, bot customer care, atau kebutuhan pribadi.
+            </p>
+          </div>
+
+          <!-- Card 2 -->
+          <div id="feature-pairing-code" class="rounded-2xl bg-[#0D121F] p-7 border border-slate-800 hover:border-amber-500/40 transition-all duration-300 hover:-translate-y-1 group">
+            <div class="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mb-5 group-hover:bg-amber-500 group-hover:text-slate-950 transition-colors">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+            </div>
+            <h3 class="font-display font-bold text-lg text-white mb-2">Pairing Code 8-Digit Instan</h3>
+            <p class="text-sm text-slate-400 leading-relaxed">
+              Cukup kirim nomor WhatsApp Anda di Telegram, pairing code langsung muncul dalam sekejap. Masukkan di WhatsApp HP Anda dan bot langsung terkoneksi.
+            </p>
+          </div>
+
+          <!-- Card 3 -->
+          <div id="feature-auto-reconnect" class="rounded-2xl bg-[#0D121F] p-7 border border-slate-800 hover:border-emerald-500/40 transition-all duration-300 hover:-translate-y-1 group">
+            <div class="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-5 group-hover:bg-emerald-500 group-hover:text-slate-950 transition-colors">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            </div>
+            <h3 class="font-display font-bold text-lg text-white mb-2">Smart Auto-Reconnect (515 & 429)</h3>
+            <p class="text-sm text-slate-400 leading-relaxed">
+              Dilengkapi algoritma penanganan restart 515 seketika dan rate-limit 429 backoff otomatis, menjaga nomor Anda selalu aktif tanpa takut terputus di tengah jalan.
+            </p>
+          </div>
+
+          <!-- Card 4 -->
+          <div id="feature-plugins" class="rounded-2xl bg-[#0D121F] p-7 border border-slate-800 hover:border-amber-500/40 transition-all duration-300 hover:-translate-y-1 group">
+            <div class="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mb-5 group-hover:bg-amber-500 group-hover:text-slate-950 transition-colors">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+            </div>
+            <h3 class="font-display font-bold text-lg text-white mb-2">12+ Plugin Bawaan Siap Pakai</h3>
+            <p class="text-sm text-slate-400 leading-relaxed">
+              Otomatisasi grup dengan antilink, media converter, CRM tools, foto HD enhancer, stiker, uptime check, dan hak akses owner/premium lengkap.
+            </p>
+          </div>
+
+          <!-- Card 5 -->
+          <div id="feature-security" class="rounded-2xl bg-[#0D121F] p-7 border border-slate-800 hover:border-emerald-500/40 transition-all duration-300 hover:-translate-y-1 group">
+            <div class="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-5 group-hover:bg-emerald-500 group-hover:text-slate-950 transition-colors">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+            </div>
+            <h3 class="font-display font-bold text-lg text-white mb-2">Isolasi Sesi & Privasi Penuh</h3>
+            <p class="text-sm text-slate-400 leading-relaxed">
+              Setiap user Telegram memiliki ruang sesi terenkripsi masing-masing. Nomor WhatsApp Anda tidak akan pernah bocor atau tercampur dengan user lain.
+            </p>
+          </div>
+
+          <!-- Card 6 -->
+          <div id="feature-management" class="rounded-2xl bg-[#0D121F] p-7 border border-slate-800 hover:border-amber-500/40 transition-all duration-300 hover:-translate-y-1 group">
+            <div class="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mb-5 group-hover:bg-amber-500 group-hover:text-slate-950 transition-colors">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+            </div>
+            <h3 class="font-display font-bold text-lg text-white mb-2">Kontrol Tombol 1-Klik</h3>
+            <p class="text-sm text-slate-400 leading-relaxed">
+              Cukup lewat tombol inline Telegram: Disconnect, Reconnect, Reset & Re-pair sesi saat logout, hingga hapus sesi permanen tanpa repot ketik command.
+            </p>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- COMPARISON SECTION: CARA LAMA VS NELLSBOT -->
+    <section id="comparison" class="py-20 bg-[#0A0E18] border-t border-slate-800/80">
+      <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+        
+        <div class="text-center max-w-xl mx-auto mb-14">
+          <span class="text-xs font-bold text-emerald-400 uppercase tracking-widest bg-emerald-400/10 px-3 py-1 rounded-full border border-emerald-400/20">Perbandingan Nyata</span>
+          <h2 class="font-display font-extrabold text-3xl sm:text-4xl text-white mt-3">
+            Tinggalkan Cara Lama yang Kuno & Melelahkan
+          </h2>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+          
+          <!-- Cara Lama -->
+          <div class="rounded-3xl bg-slate-900/40 p-8 border border-red-500/20 relative">
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/10 text-red-400 text-xs font-bold mb-6">
+              <span>❌ BOT WA BIASA (CARA LAMA)</span>
+            </div>
+            <ul class="space-y-4 text-sm text-slate-300">
+              <li class="flex items-start gap-3">
+                <span class="text-red-400 font-bold mt-0.5">✕</span>
+                <span>Wajib pakai 2 HP/laptop untuk foto dan scan QR code.</span>
+              </li>
+              <li class="flex items-start gap-3">
+                <span class="text-red-400 font-bold mt-0.5">✕</span>
+                <span>Laptop atau termux harus menyala 24 jam nonstop.</span>
+              </li>
+              <li class="flex items-start gap-3">
+                <span class="text-red-400 font-bold mt-0.5">✕</span>
+                <span>Satu bot hanya bisa menampung 1 nomor WhatsApp saja.</span>
+              </li>
+              <li class="flex items-start gap-3">
+                <span class="text-red-400 font-bold mt-0.5">✕</span>
+                <span>Jika koneksi putus (Error 515), bot mati total dan harus scan ulang dari nol.</span>
+              </li>
+            </ul>
+          </div>
+
+          <!-- NellsBot Way -->
+          <div class="rounded-3xl bg-gradient-to-b from-emerald-950/40 via-slate-900/90 to-[#0A0E18] p-8 border-2 border-emerald-500/40 relative shadow-xl shadow-emerald-950/30">
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold mb-6 border border-emerald-400/30">
+              <span>✨ NELLSBOT MULTI-SESSION</span>
+            </div>
+            <ul class="space-y-4 text-sm text-slate-200">
+              <li class="flex items-start gap-3">
+                <span class="text-emerald-400 font-bold mt-0.5">✓</span>
+                <span><strong>Cukup 1 HP saja!</strong> Masukkan Pairing Code angka langsung di aplikasi WhatsApp.</span>
+              </li>
+              <li class="flex items-start gap-3">
+                <span class="text-emerald-400 font-bold mt-0.5">✓</span>
+                <span><strong>Bebas banyak nomor:</strong> Tambah nomor sebanyak yang Anda inginkan di 1 bot Telegram.</span>
+              </li>
+              <li class="flex items-start gap-3">
+                <span class="text-emerald-400 font-bold mt-0.5">✓</span>
+                <span><strong>Auto-Reconnect 515 & 429:</strong> Otomatis tersambung kembali jika jaringan drop tanpa perlu pairing ulang.</span>
+              </li>
+              <li class="flex items-start gap-3">
+                <span class="text-emerald-400 font-bold mt-0.5">✓</span>
+                <span><strong>Kontrol di Telegram:</strong> Cek status online, restart, atau ganti nomor hanya lewat tombol menu.</span>
+              </li>
+            </ul>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- 3 EASY STEPS TO GET STARTED -->
+    <section id="how-it-works" class="py-20 bg-[#07090E] border-t border-slate-800/80">
+      <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+        
+        <div class="text-center max-w-xl mx-auto mb-16">
+          <span class="text-xs font-bold text-amber-400 uppercase tracking-widest bg-amber-400/10 px-3 py-1 rounded-full border border-amber-400/20">Cara Pakai Super Simpel</span>
+          <h2 class="font-display font-extrabold text-3xl sm:text-4xl text-white mt-3">
+            Hanya 3 Langkah untuk Menghubungkan Nomor Anda
+          </h2>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
+          
+          <!-- Step 1 -->
+          <div class="rounded-2xl bg-[#0E1322] p-6 border border-slate-800 relative">
+            <div class="w-10 h-10 rounded-full bg-amber-500 text-slate-950 font-black font-display flex items-center justify-center text-lg mb-4">
+              1
+            </div>
+            <h3 class="font-bold text-white text-base mb-2">Buka Bot Telegram</h3>
+            <p class="text-sm text-slate-400 leading-relaxed">
+              Klik tombol login untuk membuka bot resmi kami di Telegram: <strong class="text-emerald-400 font-mono">@walogin1_bot</strong>. Tekan tombol <strong>Start</strong>.
+            </p>
+          </div>
+
+          <!-- Step 2 -->
+          <div class="rounded-2xl bg-[#0E1322] p-6 border border-slate-800 relative">
+            <div class="w-10 h-10 rounded-full bg-emerald-500 text-slate-950 font-black font-display flex items-center justify-center text-lg mb-4">
+              2
+            </div>
+            <h3 class="font-bold text-white text-base mb-2">Pilih "➕ Tambah Nomor"</h3>
+            <p class="text-sm text-slate-400 leading-relaxed">
+              Kirim nomor WhatsApp yang ingin Anda aktifkan (contoh: <code>628123456789</code>). Bot akan langsung memberikan 8 digit kode pairing.
+            </p>
+          </div>
+
+          <!-- Step 3 -->
+          <div class="rounded-2xl bg-[#0E1322] p-6 border border-slate-800 relative">
+            <div class="w-10 h-10 rounded-full bg-amber-500 text-slate-950 font-black font-display flex items-center justify-center text-lg mb-4">
+              3
+            </div>
+            <h3 class="font-bold text-white text-base mb-2">Tautkan di WhatsApp</h3>
+            <p class="text-sm text-slate-400 leading-relaxed">
+              Di WhatsApp Anda, buka menu <strong>Perangkat Tertaut</strong> &gt; <strong>Tautkan dengan nomor saja</strong> &gt; Masukkan kode tersebut. Selesai! Bot langsung ONLINE!
+            </p>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- GRAND FINAL CTA SECTION (MUST-HAVE ACCORDING TO USER REQUIREMENT) -->
+    <section id="final-cta" class="py-24 relative overflow-hidden bg-gradient-to-b from-[#090D17] via-[#050811] to-[#04060C] border-t border-amber-500/20">
+      
+      <!-- Background Ambient Glows -->
+      <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[350px] bg-gradient-to-r from-emerald-500/20 via-amber-500/20 to-emerald-500/20 blur-[140px] pointer-events-none rounded-full"></div>
+
+      <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10">
+        
+        <div class="rounded-3xl p-8 sm:p-14 bg-[#0A0F1D]/90 border-2 border-amber-400/40 shadow-2xl shadow-amber-950/40 relative overflow-hidden backdrop-blur-xl">
+          
+          <!-- Decorative Top Glow Line -->
+          <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-400 via-amber-400 to-emerald-400"></div>
+
+          <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 text-xs font-bold mb-6">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+            <span>SERVER SIAP MENERIMA SESI BARU</span>
+          </div>
+
+          <h2 class="font-display font-black text-3xl sm:text-5xl text-white tracking-tight leading-tight mb-6">
+            Siap Mengaktifkan <br />
+            <span class="gold-gradient-text">Bot WhatsApp Anda Sekarang?</span>
+          </h2>
+
+          <p class="text-base sm:text-lg text-slate-300 max-w-xl mx-auto mb-10 leading-relaxed">
+            Tak perlu ragu lagi. Bergabunglah bersama puluhan nomor yang sudah aktif dan nikmati kemudahan multi-login WhatsApp tercanggih karya Nell.
+          </p>
+
+          <!-- GRAND CTA BUTTON: DIRECT TO https://t.me/walogin1_bot -->
+          <div class="flex flex-col items-center justify-center gap-4">
+            <a id="btn-login-bot-sekarang-final" href="https://t.me/walogin1_bot" target="_blank" rel="noopener noreferrer" class="group relative inline-flex items-center justify-center gap-3 px-10 py-5 rounded-2xl bg-gradient-to-r from-emerald-400 via-amber-300 to-emerald-400 hover:from-emerald-300 hover:via-amber-200 hover:to-emerald-300 text-slate-950 font-black text-lg tracking-wider shadow-2xl shadow-emerald-500/40 hover:shadow-amber-400/50 transition-all duration-300 transform hover:scale-[1.03] active:scale-100">
+              
+              <!-- Telegram Logo -->
+              <svg class="w-6 h-6 text-slate-950 fill-current" viewBox="0 0 24 24">
+                <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221l-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.446 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.121l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.535-.194 1.006.131.832.922z"/>
+              </svg>
+              
+              <span>LOGIN BOT SEKARANG</span>
+              
+              <svg class="w-5 h-5 text-slate-950 group-hover:translate-x-1.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+              </svg>
+            </a>
+
+            <!-- Telegram Link Helper Label -->
+            <p class="text-xs text-slate-400 font-mono mt-2">
+              🔗 Langsung ke bot Telegram: <a href="https://t.me/walogin1_bot" target="_blank" class="text-amber-300 underline font-semibold hover:text-amber-200">https://t.me/walogin1_bot</a>
+            </p>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <!-- FOOTER -->
+  <footer id="main-footer" class="bg-[#05070B] border-t border-slate-800/80 py-10">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
+      <div class="flex items-center gap-2">
+        <span class="font-brand font-extrabold text-white text-sm">NELLS<span class="text-amber-400">BOT</span></span>
+        <span class="text-slate-600">•</span>
+        <span>WhatsApp Multi-Session Engine</span>
+      </div>
+      <div>
+        <span>Dibuat dengan dedikasi tinggi oleh <strong>NellsBotBase</strong>. Hak Cipta &copy; 2026.</span>
+      </div>
+      <div class="flex items-center gap-4">
+        <a href="https://t.me/walogin1_bot" target="_blank" rel="noopener noreferrer" class="text-emerald-400 hover:text-emerald-300 font-medium">Telegram Bot (@walogin1_bot)</a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

@@ -16,13 +16,20 @@ const SessionManager = require('./core/SessionManager');
 
 const app = express();
 app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/', (req, res) => {
-    res.send(`
-        <h2>NellsBotBase Dashboard</h2>
-        <p>WhatsApp Bot is running.</p>
-        <p>Please use the Telegram Bot to manage your sessions.</p>
-    `);
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/api/status', (req, res) => {
+    res.json({
+        status: 'ONLINE',
+        name: 'NellsBotBase',
+        telegram: 'https://t.me/walogin1_bot',
+        uptime: Math.floor(process.uptime()),
+        memory: Math.round(process.memoryUsage().rss / 1024 / 1024) + ' MB'
+    });
 });
 
 app.listen(3000, '0.0.0.0', () => {
