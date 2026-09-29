@@ -12,6 +12,7 @@ const EventEmitter = require('events');
 const fs = require('fs');
 const chalk = require("chalk");
 const { smsg } = require('../lib/myfunc');
+const logger = require('../lib/logger');
 
 class WhatsAppSession extends EventEmitter {
     constructor(sessionId, userId, phoneNumber, authFolder) {
@@ -82,7 +83,7 @@ class WhatsAppSession extends EventEmitter {
                 this.reconnectAttempts = 0;
                 this.updateStatus('ONLINE');
                 this.pairingCode = null;
-                console.log(chalk.green(`[${this.sessionId}] WhatsApp connection established successfully.`));
+                logger.info('WHATSAPP', `[${this.sessionId}] Connection established successfully (status=ONLINE phone=${this.phoneNumber || 'unregistered'})`);
             }
 
             if (connection === 'close') {
@@ -98,7 +99,7 @@ class WhatsAppSession extends EventEmitter {
                 else if (statusCode === 429) reasonText = 'Terkena batasan frekuensi / rate limit (429)';
                 else if (statusCode) reasonText = `Error Code ${statusCode}`;
 
-                console.log(chalk.yellow(`[${this.sessionId}] Connection closed: ${reasonText}`));
+                logger.warn('WHATSAPP', `[${this.sessionId}] Connection closed: ${reasonText} (statusCode=${statusCode || 'unknown'})`);
 
                 if (statusCode === DisconnectReason.loggedOut) {
                     this.updateStatus('LOGGED_OUT', { reason: reasonText, statusCode });
@@ -131,9 +132,29 @@ class WhatsAppSession extends EventEmitter {
                     const m = smsg(this.sock, mek, this.store);
                     if (!m) continue;
 
+                    logger.info('INCOMING', `[${this.sessionId}] id=${m.id} chat=${m.chat} sender=${m.sender} fromMe=${m.fromMe}`);
                     this.emit('message', { sock: this.sock, m, store: this.store });
                 } catch (err) {
-                    console.error(chalk.red(`[${this.sessionId}] Error handling message:`), err);
+                    logger.error('WHATSAPP', `[${this.sessionId}] Error handling incoming message`, err);
+                }
+            }
+        });
+
+        // Listen to outgoing message status updates and delivery receipts (ACK)
+        this.sock.ev.on('messages.update', (updates) => {
+            if (currentGen !== this.socketGeneration) return;
+            for (const item of updates) {
+                if (item?.key && item?.update?.status) {
+                    logger.handleMessageStatusUpdate(item.key, item.update.status);
+                }
+            }
+        });
+
+        this.sock.ev.on('message-receipt.update', (receipts) => {
+            if (currentGen !== this.socketGeneration) return;
+            for (const item of receipts) {
+                if (item?.key) {
+                    logger.handleMessageStatusUpdate(item.key, 3); // 3 = DELIVERY_CONFIRMED
                 }
             }
         });

@@ -1,9 +1,11 @@
- 
 // ===================================================
 //  NellsBotBase
 //  Creator : NellsBotBase
-//  Updated : 13 September 2026
+//  Updated : 29 September 2026
 // ===================================================
+
+const logger = require('./lib/logger');
+logger.hookConsole();
 
 require('./control/settings');
 const path = require('path');
@@ -33,11 +35,11 @@ app.get('/api/status', (req, res) => {
 });
 
 app.listen(3000, '0.0.0.0', () => {
-    console.log(chalk.cyan('HTTP Server listening on http://0.0.0.0:3000'));
+    logger.info('STARTUP', 'HTTP Server listening on http://0.0.0.0:3000');
 });
 
 async function bootstrap() {
-    console.log(chalk.bold.green('Starting NellsBotBase...'));
+    logger.info('STARTUP', 'Starting NellsBotBase Multi-Session System...');
     
     // Initialize Telegram Bot
     const bot = initTelegramBot();
@@ -48,6 +50,7 @@ async function bootstrap() {
     
     if (bot) {
         TelegramHandlers.init(sessionManager);
+        logger.info('TELEGRAM', 'Telegram Bot handlers initialized successfully');
     }
 
     // Restore saved sessions
@@ -55,10 +58,10 @@ async function bootstrap() {
 
     // Graceful Shutdown
     const gracefulShutdown = () => {
-        console.log(chalk.yellow('\n[SHUTDOWN] Shutting down gracefully...'));
+        logger.info('SHUTDOWN', 'Shutting down gracefully...');
         if (bot) bot.stopPolling();
         for (const session of sessionManager.getAllSessions()) {
-            console.log(chalk.yellow(`[SHUTDOWN] Disconnecting session ${session.phoneNumber}...`));
+            logger.info('SHUTDOWN', `Disconnecting session ${session.phoneNumber || session.sessionId}...`);
             session.disconnect();
         }
         process.exit(0);
@@ -69,5 +72,5 @@ async function bootstrap() {
 }
 
 bootstrap().catch(err => {
-    console.error(chalk.red('Failed to bootstrap application:'), err);
+    logger.error('STARTUP', 'Failed to bootstrap application', err, 'BOOTSTRAP_ERROR');
 });

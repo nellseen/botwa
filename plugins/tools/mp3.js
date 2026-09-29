@@ -9,6 +9,7 @@ const fs = require("fs");
 const axios = require("axios");
 const yts = require("yt-search");
 const { resolveSenderJid } = require("../../lib/target");
+const logger = require("../../lib/logger");
 
 // Known active SoundCloud client IDs
 const KNOWN_SC_CLIENT_IDS = [
@@ -280,6 +281,36 @@ async function fetchFromYtDlp(query) {
 }
 
 /**
+ * Inspects audio file validity and codec with ffprobe
+ */
+function inspectAudio(filePath) {
+    return new Promise((resolve) => {
+        execFile("ffprobe", [
+            "-v", "error",
+            "-show_entries", "format=duration,format_name,size:stream=codec_name,codec_type",
+            "-of", "json",
+            filePath
+        ], (err, stdout) => {
+            if (err) return resolve({ valid: false, error: err.message });
+            try {
+                const info = JSON.parse(stdout);
+                const format = info.format || {};
+                const stream = (info.streams || []).find(s => s.codec_type === "audio") || {};
+                resolve({
+                    valid: true,
+                    duration: parseFloat(format.duration || 0),
+                    codec: stream.codec_name || "unknown",
+                    formatName: format.format_name || "unknown",
+                    size: parseInt(format.size || 0, 10)
+                });
+            } catch (parseErr) {
+                resolve({ valid: false, error: parseErr.message });
+            }
+        });
+    });
+}
+
+/**
  * Cleans query for better search accuracy
  */
 function cleanSongQuery(raw) {
@@ -291,10 +322,12 @@ function cleanSongQuery(raw) {
 }
 
 /**
- * Master multi-strategy music retriever
+ * Master multi-strategy music retriever with operation logging
  */
-async function fetchMusic(query) {
+async function fetchMusic(query, opId = 'MP3-SYS') {
     let cleanQuery = query.trim();
+
+    logger.info('MP3', `[SEARCH] op=${opId} query="${cleanQuery}"`);
 
     // If query is a YouTube URL, extract title first with yt-search
     if (/youtu\.?be/i.test(cleanQuery)) {
@@ -313,34 +346,51 @@ async function fetchMusic(query) {
 
     // Attempt 1: Siputzx Public REST API (Fastest direct MP3 stream)
     try {
-        return await fetchFromSiputzx(cleanQuery);
+        logger.info('MP3', `[DOWNLOAD] op=${opId} provider=Siputzx query="${cleanQuery}"`);
+        const res = await fetchFromSiputzx(cleanQuery);
+        logger.info('MP3', `[DOWNLOAD_SUCCESS] op=${opId} provider=Siputzx title="${res.title}"`);
+        return res;
     } catch (e1) {
         errors.push(`Siputzx: ${e1.message}`);
+        logger.warn('MP3', `[DOWNLOAD_FAIL] op=${opId} provider=Siputzx error=${e1.message}`);
     }
 
     // Attempt 2: Direct SoundCloud API v2
     try {
-        return await fetchFromSoundCloudV2(cleanQuery);
+        logger.info('MP3', `[DOWNLOAD] op=${opId} provider=SoundCloudV2 query="${cleanQuery}"`);
+        const res = await fetchFromSoundCloudV2(cleanQuery);
+        logger.info('MP3', `[DOWNLOAD_SUCCESS] op=${opId} provider=SoundCloudV2 title="${res.title}"`);
+        return res;
     } catch (e2) {
         errors.push(`SoundCloud v2: ${e2.message}`);
+        logger.warn('MP3', `[DOWNLOAD_FAIL] op=${opId} provider=SoundCloudV2 error=${e2.message}`);
     }
 
     // Attempt 3: Local yt-dlp binary with scsearch
     try {
-        return await fetchFromYtDlp(cleanQuery);
+        logger.info('MP3', `[DOWNLOAD] op=${opId} provider=yt-dlp query="${cleanQuery}"`);
+        const res = await fetchFromYtDlp(cleanQuery);
+        logger.info('MP3', `[DOWNLOAD_SUCCESS] op=${opId} provider=yt-dlp title="${res.title}"`);
+        return res;
     } catch (e3) {
         errors.push(`yt-dlp (scsearch): ${e3.message}`);
+        logger.warn('MP3', `[DOWNLOAD_FAIL] op=${opId} provider=yt-dlp error=${e3.message}`);
     }
 
     // Attempt 4: Cleaned query fallback
     const refinedQuery = cleanSongQuery(cleanQuery);
     if (refinedQuery && refinedQuery !== cleanQuery) {
+        logger.info('MP3', `[REFINED_SEARCH] op=${opId} refined="${refinedQuery}"`);
         try {
-            return await fetchFromSiputzx(refinedQuery);
+            const res = await fetchFromSiputzx(refinedQuery);
+            logger.info('MP3', `[DOWNLOAD_SUCCESS] op=${opId} provider=Siputzx-Refined title="${res.title}"`);
+            return res;
         } catch (_) {}
 
         try {
-            return await fetchFromYtDlp(refinedQuery);
+            const res = await fetchFromYtDlp(refinedQuery);
+            logger.info('MP3', `[DOWNLOAD_SUCCESS] op=${opId} provider=yt-dlp-Refined title="${res.title}"`);
+            return res;
         } catch (_) {}
     }
 
@@ -355,6 +405,9 @@ module.exports = {
     run: async (context) => {
         const { sock, m, text, q, prefix, botName, thumb, reply } = context;
 
+        // Generate unique operation ID for tracing the entire lifecycle of this command
+        const opId = 'MP3-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+
         const query = (text || q || "").trim();
 
         if (!query) {
@@ -366,10 +419,11 @@ module.exports = {
             );
         }
 
+        logger.info('MP3', `[START] op=${opId} query="${query}" chat=${m.chat} sender=${m.sender}`);
         await reply(`🔎 *Mencari dan memproses:* "${query}"...\n_Mohon tunggu sebentar, sistem sedang mengunduh audio..._`);
 
         try {
-            const data = await fetchMusic(query);
+            const data = await fetchMusic(query, opId);
 
             const safeTitle = (data.title || "audio")
                 .replace(/[/\\?%*:|"<>]/g, "")
@@ -402,72 +456,129 @@ module.exports = {
 
             await reply(caption);
 
+            // Save audio to absolute temporary file on disk for streaming upload
+            const tempAudioPath = path.join("/tmp", `music_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.mp3`);
+            await fs.promises.writeFile(tempAudioPath, data.buffer);
+
+            // Audit audio file with ffprobe to determine exact codec, container, duration, and MIME type
+            const audioProbe = await inspectAudio(tempAudioPath);
+            let resolvedMime = "audio/mpeg";
+            if (audioProbe.valid) {
+                if (audioProbe.codec === "mp3" || (audioProbe.formatName && audioProbe.formatName.includes("mp3"))) {
+                    resolvedMime = "audio/mpeg";
+                } else if (audioProbe.codec === "aac" || audioProbe.codec === "m4a") {
+                    resolvedMime = "audio/mp4";
+                } else if (audioProbe.codec === "opus" || audioProbe.codec === "vorbis") {
+                    resolvedMime = "audio/ogg; codecs=opus";
+                }
+            }
+
+            const stat = await fs.promises.stat(tempAudioPath);
+            if (!stat || stat.size === 0) {
+                throw new Error(`File audio kosong di disk: ${tempAudioPath}`);
+            }
+
             // Accurately resolve genuine user target across private, group, and LID sessions
             const resolved = await resolveSenderJid(sock, m, context.groupMetadata);
             const userTarget = context.senderJid || resolved.jid;
             const chatJid = m.chat;
 
-            console.log(`[MP3][TARGET] chat=${chatJid} isGroup=${context.isGroup || false}`);
-            console.log(`[MP3][SENDER] sender=${m.sender} participant=${m.key?.participant} fromMe=${m.key?.fromMe}`);
-            console.log(`[MP3][RESOLVED_USER] resolved_user=${userTarget} source=${resolved.source}`);
+            logger.info('MP3', `[METADATA] op=${opId} title="${data.title}" uploader="${data.uploader}" duration="${data.duration}"`);
+            logger.info('MP3', `[FILE] op=${opId} path=${tempAudioPath} exists=true size=${stat.size} mimetype=${resolvedMime} codec=${audioProbe.codec} duration=${audioProbe.duration}s`);
+            logger.info('MP3', `[TARGET] op=${opId} chat=${chatJid} isGroup=${context.isGroup || false}`);
+            logger.info('MP3', `[RESOLVED_USER] op=${opId} raw_sender=${m.sender} resolved_user=${userTarget} (source=${resolved.source})`);
 
-            // Reusable helper to send audio message safely
-            const sendAudioTo = async (targetJid, quotedMsg = null) => {
-                if (!targetJid) return false;
+            // Reusable helper to send audio message safely with returned key verification and stage tracking
+            const sendAudioTo = async (targetJid, quotedMsg = null, targetLabel = 'CHAT') => {
+                if (!targetJid) {
+                    logger.warn('MP3', `[SEND_SKIPPED] op=${opId} targetJid is empty`);
+                    return null;
+                }
+
+                logger.info('MP3', `[SEND] op=${opId} target=${targetJid} target_type=${targetLabel} stage=SEND_STARTED`);
+
                 try {
-                    await sock.sendMessage(targetJid, {
-                        audio: data.buffer,
-                        mimetype: "audio/mp4",
-                        ptt: false,
+                    const payload = {
+                        audio: { url: tempAudioPath },
+                        mimetype: resolvedMime,
                         fileName: `${safeTitle}.mp3`,
-                        contextInfo: {
-                            externalAdReply: {
-                                title: data.title.slice(0, 50),
-                                body: `${data.uploader} • NellsBot Music`,
-                                thumbnail: thumbBuf,
-                                sourceUrl: data.url || "https://t.me/walogin1_bot",
-                                mediaType: 2,
-                                renderLargerThumbnail: true
-                            }
-                        }
-                    }, quotedMsg ? { quoted: quotedMsg } : {});
-                    return true;
+                        ptt: false
+                    };
+
+                    const sent = await sock.sendMessage(targetJid, payload, quotedMsg ? { quoted: quotedMsg } : {});
+                    logger.info('MP3', `[SEND] op=${opId} target=${targetJid} stage=SEND_RESOLVED`);
+
+                    const hasValidKey = Boolean(sent?.key?.id && sent?.key?.remoteJid);
+
+                    if (hasValidKey) {
+                        logger.info('MP3', `[SEND] op=${opId} target=${sent.key.remoteJid} stage=MESSAGE_KEY_RECEIVED message_id=${sent.key.id}`);
+                        // Register message for automatic ACK / delivery tracking
+                        logger.registerMessageOp(sent.key.id, opId, 'MP3', targetJid);
+                        return sent;
+                    } else {
+                        logger.error('MP3', `[SEND_FAIL] op=${opId} target=${targetJid} reason="returned message key is empty"`, null, opId);
+                        return null;
+                    }
                 } catch (sendErr) {
-                    // Fallback without rich contextInfo if WhatsApp client rejects externalAdReply
-                    await sock.sendMessage(targetJid, {
-                        audio: data.buffer,
-                        mimetype: "audio/mp4",
-                        ptt: false,
-                        fileName: `${safeTitle}.mp3`
-                    }, quotedMsg ? { quoted: quotedMsg } : {});
-                    return true;
+                    logger.error('MP3', `[SEND_ERROR] op=${opId} target=${targetJid} stage=SEND_FAILED`, sendErr, opId);
+                    throw sendErr;
                 }
             };
 
-            // 1. Send audio to m.chat (group / channel / chat where command was executed)
-            console.log(`[MP3][SEND_GROUP] Delivering audio to chat: ${chatJid}...`);
-            try {
-                await sendAudioTo(chatJid, m);
-                console.log(`[MP3][SUCCESS] Audio delivered to chat ${chatJid}`);
-            } catch (chatSendErr) {
-                console.error(`[MP3][ERROR] Failed delivering audio to chat ${chatJid}:`, chatSendErr.message);
-            }
-
-            // 2. If command was run in a group or channel where m.chat !== userTarget,
-            // deliver audio directly to the user who requested it!
-            if (userTarget && userTarget !== chatJid) {
-                console.log(`[MP3][SEND_PRIVATE] Delivering audio to user PM: ${userTarget}...`);
+            // Schedule cleanup of temporary audio file
+            const cleanupTimer = setTimeout(() => {
                 try {
-                    await sendAudioTo(userTarget, null);
-                    console.log(`[MP3][SUCCESS] Direct private audio successfully delivered to ${userTarget}`);
-                } catch (userSendErr) {
-                    console.error(`[MP3][ERROR] Direct private send to ${userTarget} failed:`, userSendErr);
-                    await reply(`⚠️ _Pemberitahuan: Audio gagal dikirimkan ke chat pribadi kamu (${userSendErr.message}). Pastikan chat bot tidak kamu blokir._`);
+                    if (fs.existsSync(tempAudioPath)) {
+                        fs.unlinkSync(tempAudioPath);
+                        logger.info('MP3', `[CLEANUP] op=${opId} removed temporary file ${tempAudioPath}`);
+                    }
+                } catch (_) {}
+            }, 60000);
+            if (cleanupTimer && cleanupTimer.unref) cleanupTimer.unref();
+
+            if (context.isGroup) {
+                // TARGET 1: Group
+                try {
+                    const sentGroup = await sendAudioTo(chatJid, m, 'GROUP');
+                    if (sentGroup) {
+                        logger.info('MP3', `[SEND_GROUP] op=${opId} status=SENT message_id=${sentGroup.key?.id}`);
+                    } else {
+                        logger.warn('MP3', `[SEND_GROUP] op=${opId} status=FAILED`);
+                    }
+                } catch (groupErr) {
+                    logger.error('MP3', `[SEND_GROUP] op=${opId} status=ERROR`, groupErr, opId);
+                }
+
+                // TARGET 2: Private user who ran the command
+                if (userTarget && userTarget !== chatJid) {
+                    try {
+                        const sentPrivate = await sendAudioTo(userTarget, null, 'PRIVATE_USER');
+                        if (sentPrivate) {
+                            logger.info('MP3', `[SEND_PRIVATE] op=${opId} status=SENT message_id=${sentPrivate.key?.id}`);
+                        } else {
+                            logger.warn('MP3', `[SEND_PRIVATE] op=${opId} status=FAILED`);
+                        }
+                    } catch (userErr) {
+                        logger.error('MP3', `[SEND_PRIVATE] op=${opId} status=ERROR`, userErr, opId);
+                        await reply(`⚠️ _Catatan: Audio gagal dikirimkan ke chat pribadi kamu (${userErr.message})._`);
+                    }
+                }
+            } else {
+                // Private chat execution
+                try {
+                    const sentPrivate = await sendAudioTo(chatJid, m, 'PRIVATE_CHAT');
+                    if (sentPrivate) {
+                        logger.info('MP3', `[SEND_PRIVATE] op=${opId} status=SENT message_id=${sentPrivate.key?.id}`);
+                    } else {
+                        logger.warn('MP3', `[SEND_PRIVATE] op=${opId} status=FAILED`);
+                    }
+                } catch (privateErr) {
+                    logger.error('MP3', `[SEND_PRIVATE] op=${opId} status=ERROR`, privateErr, opId);
                 }
             }
 
         } catch (err) {
-            console.error("[Music Plugin Error]:", err.message);
+            logger.error('MP3', `op=${opId} Download/Send failed for query="${query}"`, err, opId);
             return reply(`❌ *Gagal memutar musik:* ${err.message || "Lagu tidak ditemukan atau server sedang sibuk."}`);
         }
     }

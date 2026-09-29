@@ -11,6 +11,7 @@ const util = require('util');
 const { spawn, exec, execSync } = require('child_process');
 const plugins = require('./lib/plugins');
 const { resolveSenderJid } = require('./lib/target');
+const logger = require('./lib/logger');
 
 // Cache group metadata for 2 minutes to prevent Baileys 429 rate limits
 const groupMetaCache = new Map();
@@ -182,6 +183,12 @@ module.exports = async (sock, m, chatUpdate, store, session) => {
         const senderJid = senderResolution.jid || normalizeAccessJid(sender);
         m.senderJid = senderJid;
 
+        logger.info('ROUTER', `target_resolution chat=${m.chat} raw=${m.sender} -> resolved=${senderJid} (source=${senderResolution.source})`);
+
+        if (command) {
+            logger.info('COMMAND', `cmd="${command}" args="${text}" chat=${m.chat} sender=${senderJid} isGroup=${isGroup}`);
+        }
+
         const sameUser = (a, b) => {
             if (!a || !b) return false;
             try {
@@ -271,6 +278,7 @@ module.exports = async (sock, m, chatUpdate, store, session) => {
             isOwner,
             isCreator,
             isPremium,
+            logger,
             reply,
             thumb,
             botName,
