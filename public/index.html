@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NellsBot - Multi-Session WhatsApp Bot via Telegram</title>
-  <meta name="description" content="Kini login banyak nomor WhatsApp di bot Telegram makin praktis tanpa ribet. Didukung auto-reconnect cerdas, pairing code instan, dan plugin lengkap by NellsBot.">
-  <meta property="og:title" content="NellsBot - Multi-Session WhatsApp Bot via Telegram">
-  <meta property="og:description" content="Platform WhatsApp Bot multi-nomor pertama yang dikendalikan penuh lewat Telegram tanpa scan QR. Login bot sekarang di @walogin1_bot.">
+  <title>NellsBotBase WhatsApp & Telegram Bot</title>
+  <meta name="description" content="Multi-session WhatsApp bot with Telegram management dashboard, Baileys integration, and extensible plugin architecture.">
+  <meta property="og:title" content="NellsBotBase WhatsApp & Telegram Bot">
+  <meta property="og:description" content="Multi-session WhatsApp bot with Telegram management dashboard, Baileys integration, and extensible plugin architecture.">
   
   <!-- Google Fonts: Syne, Plus Jakarta Sans, Outfit -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -43,14 +43,16 @@
     }
   </script>
   <style>
-    /* Luxury Glass and Mesh Gradients */
+    /* Smooth GPU-accelerated scrolling and layout */
+    html {
+      scroll-behavior: smooth;
+      -webkit-overflow-scrolling: touch;
+    }
     body {
       background-color: #07090E;
-      background-image: 
-        radial-gradient(circle at 15% 15%, rgba(16, 185, 129, 0.08) 0%, transparent 40%),
-        radial-gradient(circle at 85% 25%, rgba(245, 158, 11, 0.07) 0%, transparent 45%),
-        radial-gradient(circle at 50% 85%, rgba(16, 185, 129, 0.06) 0%, transparent 50%);
-      background-attachment: fixed;
+      overflow-x: hidden;
+      position: relative;
+      -webkit-font-smoothing: antialiased;
     }
     
     .gold-glow {
@@ -97,9 +99,22 @@
       background: #1E293B;
       border-radius: 9999px;
     }
+
+    /* Prevent GPU compositor flash on sticky header */
+    #main-header {
+      transform: translateZ(0);
+      will-change: transform;
+    }
   </style>
 </head>
-<body class="text-slate-100 antialiased selection:bg-brand-emerald selection:text-black min-h-screen flex flex-col justify-between">
+<body class="text-slate-100 antialiased selection:bg-brand-emerald selection:text-black min-h-screen flex flex-col justify-between relative">
+
+  <!-- ACCELERATED FIXED BACKGROUND LAYER (PREVENTS SCROLL REPAINT JITTER / RELOG EFFECT) -->
+  <div class="fixed inset-0 pointer-events-none -z-10 overflow-hidden" aria-hidden="true" style="transform: translateZ(0);">
+    <div class="absolute -top-[10%] left-[10%] w-[650px] h-[650px] rounded-full bg-emerald-500/10 blur-[140px]"></div>
+    <div class="absolute top-[30%] right-[10%] w-[550px] h-[550px] rounded-full bg-amber-500/10 blur-[130px]"></div>
+    <div class="absolute bottom-[10%] left-[25%] w-[650px] h-[650px] rounded-full bg-emerald-500/10 blur-[150px]"></div>
+  </div>
 
   <!-- TOP ANNOUNCEMENT BAR -->
   <div id="top-announcement" class="bg-gradient-to-r from-amber-950/40 via-emerald-950/50 to-amber-950/40 border-b border-amber-500/20 py-2.5 px-4 text-center text-xs sm:text-sm font-medium text-amber-200/90 flex items-center justify-center gap-2">
@@ -112,11 +127,11 @@
   </div>
 
   <!-- NAVIGATION HEADER -->
-  <header id="main-header" class="sticky top-0 z-50 backdrop-blur-xl bg-[#07090E]/80 border-b border-slate-800/80">
+  <header id="main-header" class="sticky top-0 z-50 backdrop-blur-xl bg-[#07090E]/85 border-b border-slate-800/80">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
       
       <!-- Brand Logo -->
-      <a href="#" id="brand-logo-link" class="flex items-center gap-3 group">
+      <a href="/" id="brand-logo-link" class="flex items-center gap-3 group">
         <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500/20 via-emerald-500/20 to-slate-900 border border-amber-500/30 flex items-center justify-center p-0.5 group-hover:border-emerald-400 transition-colors duration-300">
           <div class="w-full h-full bg-[#0B0F19] rounded-[10px] flex items-center justify-center">
             <!-- Luxury Bot Icon -->
@@ -634,6 +649,24 @@
       </div>
     </div>
   </footer>
+
+  <script>
+    // Ensure smooth scrolling for internal anchors and avoid hash jumping / reload feeling
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        const targetId = this.getAttribute('href').slice(1);
+        if (!targetId) {
+          e.preventDefault();
+          return;
+        }
+        const targetElement = document.getElementById(targetId);
+        if (targetElement) {
+          e.preventDefault();
+          targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    });
+  </script>
 
 </body>
 </html>

@@ -1,6 +1,6 @@
 // ===================================================
 //  NellsBotBase - Music Search & Audio Downloader
-//  Creator : NellsBotBase
+//  Enhanced & Resilient Multi-Strategy Pipeline
 // ===================================================
 
 const { execFile } = require("child_process");
@@ -9,18 +9,19 @@ const fs = require("fs");
 const axios = require("axios");
 const yts = require("yt-search");
 
-// Fallback SoundCloud client IDs that are known active
+// Known active SoundCloud client IDs
 const KNOWN_SC_CLIENT_IDS = [
     "Pb72ranhoyt6gw7hM7TkzUItXlMWSNSo",
     "b8rF2QnNqVb9dF6ZpX8u4Q2W7Y3e1M5a",
-    "iZIs9mchVcX5lhVRphQggOuUMDNTGWih"
+    "iZIs9mchVcX5lhVRphQggOuUMDNTGWih",
+    "a3e059563d7fd3372b49b37f00a00bcf"
 ];
 
 let cachedClientId = null;
 let lastClientIdCheck = 0;
 
 /**
- * Dynamically gets an active SoundCloud Client ID or uses reliable fallbacks
+ * Dynamically gets an active SoundCloud Client ID with cache and fallbacks
  */
 async function getSoundCloudClientId() {
     const now = Date.now();
@@ -31,15 +32,15 @@ async function getSoundCloudClientId() {
     try {
         const scHtml = await axios.get("https://soundcloud.com", {
             headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             },
             timeout: 5000
         });
 
         const scriptUrls = scHtml.data.match(/https:\/\/[a-zA-Z0-9-._~:\/?#\[\]@!$&'()*+,;=]+?\.js/g) || [];
-        for (const scriptUrl of scriptUrls.slice(-6)) {
+        for (const scriptUrl of scriptUrls.slice(-8)) {
             try {
-                const sRes = await axios.get(scriptUrl, { timeout: 4000 });
+                const sRes = await axios.get(scriptUrl, { timeout: 3500 });
                 const match = sRes.data.match(/client_id:"([a-zA-Z0-9]{32})"/);
                 if (match && match[1]) {
                     cachedClientId = match[1];
@@ -50,8 +51,8 @@ async function getSoundCloudClientId() {
         }
     } catch (_) {}
 
-    // Fallback to primary known client ID
-    cachedClientId = KNOWN_SC_CLIENT_IDS[0];
+    // Fallback to rotating client IDs
+    cachedClientId = KNOWN_SC_CLIENT_IDS[Math.floor(Math.random() * KNOWN_SC_CLIENT_IDS.length)];
     lastClientIdCheck = now;
     return cachedClientId;
 }
@@ -65,8 +66,69 @@ function formatDuration(ms) {
 }
 
 /**
- * Strategy 1: Pure Node.js Direct SoundCloud API v2
- * Ultra fast (~1s), direct CDN MP3 progressive stream, no external binary required.
+ * Strategy 1: Siputzx Public REST API (Fastest direct MP3 stream)
+ */
+async function fetchFromSiputzx(query) {
+    const headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    };
+
+    const isUrl = /^https?:\/\/(?:m\.)?soundcloud\.com\//i.test(query);
+    let targetUrl = query;
+
+    if (!isUrl) {
+        const searchRes = await axios.get(
+            `https://api.siputzx.my.id/api/s/soundcloud?query=${encodeURIComponent(query)}`,
+            { timeout: 10000, headers }
+        );
+
+        const list = searchRes.data?.data;
+        if (!Array.isArray(list) || !list.length) {
+            throw new Error("Lagu tidak ditemukan di direktori Siputzx.");
+        }
+
+        const validItem = list.find(item => item.permalink_url && item.duration > 30000) || list[0];
+        if (!validItem || !validItem.permalink_url) {
+            throw new Error("Data track Siputzx tidak valid.");
+        }
+        targetUrl = validItem.permalink_url;
+    }
+
+    const dlRes = await axios.get(
+        `https://api.siputzx.my.id/api/d/soundcloud?url=${encodeURIComponent(targetUrl)}`,
+        { timeout: 10000, headers }
+    );
+
+    const dlData = dlRes.data?.data;
+    const dlUrl = dlData?.url;
+    if (!dlUrl) {
+        throw new Error("URL download tidak tersedia di Siputzx.");
+    }
+
+    const audioRes = await axios.get(dlUrl, {
+        responseType: "arraybuffer",
+        timeout: 30000,
+        headers,
+        maxContentLength: 70 * 1024 * 1024
+    });
+
+    const buffer = Buffer.from(audioRes.data);
+    if (!buffer || buffer.length < 5000) {
+        throw new Error("Ukuran audio buffer terlalu kecil.");
+    }
+
+    return {
+        title: dlData.title || query,
+        uploader: dlData.user || "SoundCloud Artist",
+        duration: formatDuration(dlData.duration),
+        thumbnail: dlData.thumbnail || null,
+        url: targetUrl,
+        buffer
+    };
+}
+
+/**
+ * Strategy 2: Direct SoundCloud API v2
  */
 async function fetchFromSoundCloudV2(query) {
     const clientId = await getSoundCloudClientId();
@@ -82,7 +144,7 @@ async function fetchFromSoundCloudV2(query) {
         track = resolveRes.data;
     } else {
         const searchRes = await axios.get(
-            `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(query)}&client_id=${clientId}&limit=5`,
+            `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(query)}&client_id=${clientId}&limit=6`,
             { timeout: 8000 }
         );
         track = searchRes.data?.collection?.[0];
@@ -97,6 +159,10 @@ async function fetchFromSoundCloudV2(query) {
     const progressive = transcodings.find(m => m.format?.protocol === "progressive");
 
     if (!progressive) {
+        // If progressive not available, delegate to yt-dlp with the direct track permalink
+        if (track.permalink_url) {
+            return await fetchFromYtDlp(track.permalink_url);
+        }
         throw new Error("Format audio stream progressive tidak tersedia.");
     }
 
@@ -107,9 +173,14 @@ async function fetchFromSoundCloudV2(query) {
 
     const audioRes = await axios.get(streamInfo.data.url, {
         responseType: "arraybuffer",
-        timeout: 25000,
-        maxContentLength: 50 * 1024 * 1024
+        timeout: 30000,
+        maxContentLength: 70 * 1024 * 1024
     });
+
+    const buffer = Buffer.from(audioRes.data);
+    if (!buffer || buffer.length < 5000) {
+        throw new Error("Ukuran audio buffer terlalu kecil.");
+    }
 
     return {
         title: track.title || query,
@@ -117,73 +188,27 @@ async function fetchFromSoundCloudV2(query) {
         duration: formatDuration(track.duration),
         thumbnail: track.artwork_url || track.user?.avatar_url || null,
         url: track.permalink_url || query,
-        buffer: Buffer.from(audioRes.data)
+        buffer
     };
 }
 
 /**
- * Strategy 2: Siputzx Public REST API (Indonesian WA Bot Community API)
- */
-async function fetchFromSiputzx(query) {
-    const searchRes = await axios.get(
-        `https://api.siputzx.my.id/api/s/soundcloud?query=${encodeURIComponent(query)}`,
-        { timeout: 8000 }
-    );
-
-    const first = searchRes.data?.data?.[0];
-    if (!first || !first.permalink_url) {
-        throw new Error("Lagu tidak ditemukan di Siputzx.");
-    }
-
-    const dlRes = await axios.get(
-        `https://api.siputzx.my.id/api/d/soundcloud?url=${encodeURIComponent(first.permalink_url)}`,
-        { timeout: 8000 }
-    );
-
-    const dlUrl = dlRes.data?.data?.url;
-    if (!dlUrl) {
-        throw new Error("Download link tidak tersedia di Siputzx.");
-    }
-
-    const audioRes = await axios.get(dlUrl, {
-        responseType: "arraybuffer",
-        timeout: 25000,
-        maxContentLength: 50 * 1024 * 1024
-    });
-
-    return {
-        title: dlRes.data?.data?.title || first.permalink || query,
-        uploader: first.user?.username || "Artist",
-        duration: formatDuration(first.duration),
-        thumbnail: first.artwork_url || null,
-        url: first.permalink_url,
-        buffer: Buffer.from(audioRes.data)
-    };
-}
-
-/**
- * Strategy 3: Local yt-dlp binary (if present, executable, and python is available)
+ * Strategy 3: Local yt-dlp binary with Python3
+ * Rock-solid fallback supporting HLS, adaptive streams, and direct extraction
  */
 async function fetchFromYtDlp(query) {
     const ytdlpPath = path.join(__dirname, "../../bin/yt-dlp");
 
-    // Pre-flight check: ensure binary exists and is executable
     if (!fs.existsSync(ytdlpPath)) {
-        throw new Error("yt-dlp binary not installed");
+        throw new Error("yt-dlp binary tidak ditemukan.");
     }
 
     try {
-        fs.accessSync(ytdlpPath, fs.constants.X_OK);
-    } catch (_) {
-        // Attempt chmod +x if missing permission
-        try {
-            fs.chmodSync(ytdlpPath, 0o755);
-        } catch (_) {
-            throw new Error("yt-dlp binary is not executable");
-        }
-    }
+        fs.chmodSync(ytdlpPath, 0o755);
+    } catch (_) {}
 
-    const tempPrefix = `music_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const pythonBin = fs.existsSync('/usr/bin/python3') ? '/usr/bin/python3' : 'python3';
+    const tempPrefix = `music_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const tempBase = path.join("/tmp", tempPrefix);
     const isUrl = /^https?:\/\//i.test(query);
     const searchTarget = isUrl ? query : `scsearch1:${query}`;
@@ -191,29 +216,51 @@ async function fetchFromYtDlp(query) {
     const args = [
         searchTarget,
         "--print-json",
-        "-f", "bestaudio",
+        "-f", "bestaudio/best",
         "-o", `${tempBase}.%(ext)s`,
         "--no-playlist",
-        "--socket-timeout", "15"
+        "--socket-timeout", "20",
+        "--no-warnings"
     ];
 
     return new Promise((resolve, reject) => {
-        execFile(ytdlpPath, args, { timeout: 35000 }, (err, stdout) => {
-            if (err) return reject(err);
+        execFile(pythonBin, [ytdlpPath, ...args], { timeout: 45000 }, (err, stdout) => {
+            const cleanupTempFiles = () => {
+                try {
+                    const leftovers = fs.readdirSync("/tmp").filter(f => f.startsWith(tempPrefix));
+                    for (const file of leftovers) {
+                        try { fs.unlinkSync(path.join("/tmp", file)); } catch (_) {}
+                    }
+                } catch (_) {}
+            };
+
+            if (err) {
+                cleanupTempFiles();
+                return reject(new Error(`yt-dlp error: ${err.message}`));
+            }
 
             try {
                 const lines = stdout.trim().split("\n");
                 const jsonLine = lines.find(l => l.startsWith("{"));
-                if (!jsonLine) return reject(new Error("Gagal membaca metadata JSON."));
-                const meta = JSON.parse(jsonLine);
+                if (!jsonLine) {
+                    cleanupTempFiles();
+                    return reject(new Error("Gagal membaca metadata JSON dari yt-dlp."));
+                }
 
+                const meta = JSON.parse(jsonLine);
                 const createdFiles = fs.readdirSync("/tmp").filter(f => f.startsWith(tempPrefix));
-                if (!createdFiles.length) return reject(new Error("File audio tidak tersimpan."));
+                if (!createdFiles.length) {
+                    cleanupTempFiles();
+                    return reject(new Error("File audio tidak tersimpan oleh yt-dlp."));
+                }
 
                 const filePath = path.join("/tmp", createdFiles[0]);
                 const audioBuffer = fs.readFileSync(filePath);
+                cleanupTempFiles();
 
-                try { fs.unlinkSync(filePath); } catch (_) {}
+                if (!audioBuffer || audioBuffer.length < 5000) {
+                    return reject(new Error("Hasil audio yt-dlp kosong atau corrupt."));
+                }
 
                 resolve({
                     title: meta.title || query,
@@ -224,14 +271,22 @@ async function fetchFromYtDlp(query) {
                     buffer: audioBuffer
                 });
             } catch (parseErr) {
-                try {
-                    const leftovers = fs.readdirSync("/tmp").filter(f => f.startsWith(tempPrefix));
-                    for (const l of leftovers) fs.unlinkSync(path.join("/tmp", l));
-                } catch (_) {}
+                cleanupTempFiles();
                 reject(parseErr);
             }
         });
     });
+}
+
+/**
+ * Cleans query for better search accuracy
+ */
+function cleanSongQuery(raw) {
+    return raw
+        .replace(/\[.*?\]|\(.*?\)/g, " ") // remove brackets
+        .replace(/(?:official\s*(?:video|audio|music\s*video|lyric\s*video)?|lirik|lyrics|hd|4k|mv)/gi, " ")
+        .replace(/\s+/g, " ")
+        .trim();
 }
 
 /**
@@ -247,7 +302,7 @@ async function fetchMusic(query) {
             if (ytMatch && ytMatch[1]) {
                 const ytData = await yts({ videoId: ytMatch[1] });
                 if (ytData && ytData.title) {
-                    cleanQuery = ytData.title.replace(/\[.*?\]|\(.*?\)/g, "").trim();
+                    cleanQuery = cleanSongQuery(ytData.title);
                 }
             }
         } catch (_) {}
@@ -255,25 +310,37 @@ async function fetchMusic(query) {
 
     const errors = [];
 
-    // Attempt 1: SoundCloud V2 direct API (Fastest, zero-binary dependency)
-    try {
-        return await fetchFromSoundCloudV2(cleanQuery);
-    } catch (e1) {
-        errors.push(`SoundCloud v2: ${e1.message}`);
-    }
-
-    // Attempt 2: Siputzx Public REST API
+    // Attempt 1: Siputzx Public REST API (Fastest direct MP3 stream)
     try {
         return await fetchFromSiputzx(cleanQuery);
-    } catch (e2) {
-        errors.push(`Siputzx API: ${e2.message}`);
+    } catch (e1) {
+        errors.push(`Siputzx: ${e1.message}`);
     }
 
-    // Attempt 3: Local yt-dlp binary (if installed on server)
+    // Attempt 2: Direct SoundCloud API v2
+    try {
+        return await fetchFromSoundCloudV2(cleanQuery);
+    } catch (e2) {
+        errors.push(`SoundCloud v2: ${e2.message}`);
+    }
+
+    // Attempt 3: Local yt-dlp binary with scsearch
     try {
         return await fetchFromYtDlp(cleanQuery);
     } catch (e3) {
-        errors.push(`yt-dlp: ${e3.message}`);
+        errors.push(`yt-dlp (scsearch): ${e3.message}`);
+    }
+
+    // Attempt 4: Cleaned query fallback
+    const refinedQuery = cleanSongQuery(cleanQuery);
+    if (refinedQuery && refinedQuery !== cleanQuery) {
+        try {
+            return await fetchFromSiputzx(refinedQuery);
+        } catch (_) {}
+
+        try {
+            return await fetchFromYtDlp(refinedQuery);
+        } catch (_) {}
     }
 
     throw new Error(`Semua server musik gagal merespon (${errors.join("; ")})`);
@@ -298,12 +365,15 @@ module.exports = {
             );
         }
 
-        await reply(`🔎 *Mencari dan memproses:* "${query}"...\n_Mohon tunggu beberapa detik ya..._`);
+        await reply(`🔎 *Mencari dan memproses:* "${query}"...\n_Mohon tunggu sebentar, sistem sedang mengunduh audio..._`);
 
         try {
             const data = await fetchMusic(query);
 
-            const safeTitle = data.title.replace(/[/\\?%*:|"<>]/g, "").slice(0, 80);
+            const safeTitle = (data.title || "audio")
+                .replace(/[/\\?%*:|"<>]/g, "")
+                .slice(0, 80)
+                .trim();
             const sizeMb = (data.buffer.length / (1024 * 1024)).toFixed(2);
 
             let thumbBuf = null;
