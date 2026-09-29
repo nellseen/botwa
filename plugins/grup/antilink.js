@@ -1,5 +1,5 @@
 // ===================================================
-//  NellsBotBase
+//  NellsBotBase - Antilink Group Protection
 //  Creator : NellsBotBase
 //  Updated : 29 September 2026
 // ===================================================
@@ -12,8 +12,9 @@ const DATABASE = path.join(process.cwd(), "lib/database/antilink.json");
 
 // Comprehensive URL & Domain Matchers
 const URL_PROTOCOL_REGEX = /(?:https?:\/\/|ftp:\/\/|www\.)[^\s/$.?#].[^\s]*/i;
-const SOCIAL_SHORT_REGEX = /\b(?:wa\.me|t\.me|bit\.ly|s\.id|cutt\.ly|tinyurl\.com|shorturl\.at|linktr\.ee|chat\.whatsapp\.com|whatsapp\.com\/channel|discord\.gg|instagram\.com|tiktok\.com|youtu\.be)\/[a-zA-Z0-9_\-\.\/]+/i;
-const DOMAIN_REGEX = /\b[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.(?:com|org|net|edu|gov|id|io|me|co|xyz|my|info|biz|top|live|site|online|app|dev|pro|ai|cc|gg|link|tv|club|store|tech|space|shop|click|icu|vip|work|win|mobi|fun|news|today|page|website|agency|life|world|cloud|group|zone|social|digital|network|center|games|ltd|media|pub|company|fit|solutions|asia|sg|us|uk|de|ru|in|br|fr|au|ca|cn|jp)(?:\b|\/|\?|#)[^\s]*/i;
+const SHORT_REGEX = /\b(?:wa\.me|t\.me|bit\.ly|s\.id|cutt\.ly|tinyurl\.com|shorturl\.at|linktr\.ee|chat\.whatsapp\.com|whatsapp\.com\/channel|discord\.gg|instagram\.com|tiktok\.com|youtu\.be|x\.com|fb\.watch|facebook\.com)\/[^\s]+/i;
+const TLD_LIST = 'com|org|net|edu|gov|id|io|me|co|xyz|my|info|biz|top|live|site|online|app|dev|pro|ai|cc|gg|link|tv|club|store|tech|space|shop|click|icu|vip|work|win|mobi|fun|news|today|page|website|agency|life|world|cloud|group|zone|social|digital|network|center|games|ltd|media|pub|company|fit|solutions|asia|sg|us|uk|de|ru|in|br|fr|au|ca|cn|jp|to|ly|is|gd';
+const DOMAIN_REGEX = new RegExp('\\b[a-zA-Z0-9](?:[a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?\\.(?:' + TLD_LIST + ')(?:\\b|\\/|\\?|#)[^\\s]*', 'i');
 
 /**
  * Accurately detects any link/URL in text while ignoring normal messages,
@@ -25,7 +26,7 @@ function containsAnyLink(text) {
     if (!clean) return false;
 
     if (URL_PROTOCOL_REGEX.test(clean)) return true;
-    if (SOCIAL_SHORT_REGEX.test(clean)) return true;
+    if (SHORT_REGEX.test(clean)) return true;
     if (DOMAIN_REGEX.test(clean)) return true;
 
     return false;
@@ -95,7 +96,7 @@ module.exports = {
     group: true,
     description: "Hapus otomatis setiap link atau tautan yang dikirim di grup",
     before: async context => {
-        const { body, budy, prefix, isGroup, isBotAdmins, m, sock } = context;
+        const { body, budy, prefix, isGroup, isBotAdmins, isGroupAdmins, isOwner, isCreator, m, sock } = context;
 
         // Antilink only operates in groups and never deletes the bot's own messages
         if (!isGroup || m.key.fromMe) return false;
@@ -123,31 +124,52 @@ module.exports = {
 
         // Verify bot has group admin permissions to delete other participants' messages
         if (!isBotAdmins) {
-            console.warn(`[ANTILINK] Terdeteksi link di grup ${m.chat}, namun bot bukan admin grup sehingga tidak bisa menghapus.`);
+            console.warn(`[ANTILINK][PERMISSION_DENIED]
+chat: ${m.chat}
+message: ${m.key.id}
+participant: ${m.key.participant || m.sender}
+reason: Bot is not an admin in this group and lacks delete permissions`);
             return false;
         }
+
+        const deleteKey = {
+            remoteJid: m.chat,
+            fromMe: false,
+            id: m.key.id,
+            participant: m.key.participant || m.sender
+        };
 
         try {
-            // Delete message as fast as possible
-            const deleteKey = {
-                remoteJid: m.chat,
-                fromMe: false,
-                id: m.key.id,
-                participant: m.key.participant || m.sender
-            };
             await sock.sendMessage(m.chat, { delete: deleteKey });
-
-            // Notify group with participant mention
-            const senderNumber = (m.sender || "").split("@")[0].replace(/[^0-9]/g, "");
-            await sock.sendMessage(m.chat, {
-                text: `⚠️ *Pesan Dihapus (Antilink)*\n@${senderNumber}, dilarang mengirim link/tautan apa pun di grup ini karena proteksi Antilink aktif.`,
-                mentions: [m.sender]
-            });
-            return true;
-        } catch (error) {
-            console.error(`[ANTILINK] Gagal menghapus pesan link: ${error.message}`);
-            return false;
+            console.log(`[ANTILINK][DELETE_SUCCESS] chat=${m.chat} id=${m.key.id} participant=${deleteKey.participant}`);
+        } catch (deleteError) {
+            console.error(`[ANTILINK][DELETE_ERROR]
+chat: ${m.chat}
+message: ${m.key.id}
+participant: ${deleteKey.participant}
+id: ${m.key.id}
+error: ${deleteError.message}`);
+            // Fallback attempt with m.key directly
+            try {
+                await sock.sendMessage(m.chat, { delete: m.key });
+            } catch (_) {}
         }
+
+        // Send a brief notification that auto-deletes in 3.5 seconds to prevent chat clutter
+        try {
+            const senderTag = (context.senderJid || m.sender || "").split("@")[0].replace(/[^0-9]/g, "");
+            const warn = await sock.sendMessage(m.chat, {
+                text: `⚠️ *Antilink Aktif:* Pesan dari @${senderTag} dihapus karena mengandung tautan/link.`,
+                mentions: [m.sender, context.senderJid].filter(Boolean)
+            });
+            if (warn?.key) {
+                setTimeout(() => {
+                    sock.sendMessage(m.chat, { delete: warn.key }).catch(() => {});
+                }, 3500);
+            }
+        } catch (_) {}
+
+        return true;
     },
     run: async context => {
         const { sock, m, args, isGroup, isBotAdmins, isGroupAdmins, isOwner, isCreator, reply, groupName, prefix } = context;

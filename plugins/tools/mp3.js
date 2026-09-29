@@ -8,6 +8,7 @@ const path = require("path");
 const fs = require("fs");
 const axios = require("axios");
 const yts = require("yt-search");
+const { resolveSenderJid } = require("../../lib/target");
 
 // Known active SoundCloud client IDs
 const KNOWN_SC_CLIENT_IDS = [
@@ -401,12 +402,18 @@ module.exports = {
 
             await reply(caption);
 
-            // Determine user who initiated the command
-            const userTarget = m.sender || m.key?.participant || (m.key?.fromMe ? sock?.user?.id : null);
+            // Accurately resolve genuine user target across private, group, and LID sessions
+            const resolved = await resolveSenderJid(sock, m, context.groupMetadata);
+            const userTarget = context.senderJid || resolved.jid;
+            const chatJid = m.chat;
+
+            console.log(`[MP3][TARGET] chat=${chatJid} isGroup=${context.isGroup || false}`);
+            console.log(`[MP3][SENDER] sender=${m.sender} participant=${m.key?.participant} fromMe=${m.key?.fromMe}`);
+            console.log(`[MP3][RESOLVED_USER] resolved_user=${userTarget} source=${resolved.source}`);
 
             // Reusable helper to send audio message safely
             const sendAudioTo = async (targetJid, quotedMsg = null) => {
-                if (!targetJid) return;
+                if (!targetJid) return false;
                 try {
                     await sock.sendMessage(targetJid, {
                         audio: data.buffer,
@@ -424,6 +431,7 @@ module.exports = {
                             }
                         }
                     }, quotedMsg ? { quoted: quotedMsg } : {});
+                    return true;
                 } catch (sendErr) {
                     // Fallback without rich contextInfo if WhatsApp client rejects externalAdReply
                     await sock.sendMessage(targetJid, {
@@ -432,19 +440,29 @@ module.exports = {
                         ptt: false,
                         fileName: `${safeTitle}.mp3`
                     }, quotedMsg ? { quoted: quotedMsg } : {});
+                    return true;
                 }
             };
 
             // 1. Send audio to m.chat (group / channel / chat where command was executed)
-            await sendAudioTo(m.chat, m);
+            console.log(`[MP3][SEND_GROUP] Delivering audio to chat: ${chatJid}...`);
+            try {
+                await sendAudioTo(chatJid, m);
+                console.log(`[MP3][SUCCESS] Audio delivered to chat ${chatJid}`);
+            } catch (chatSendErr) {
+                console.error(`[MP3][ERROR] Failed delivering audio to chat ${chatJid}:`, chatSendErr.message);
+            }
 
             // 2. If command was run in a group or channel where m.chat !== userTarget,
-            // also deliver the audio directly to the user who used the command!
-            if (userTarget && userTarget !== m.chat) {
+            // deliver audio directly to the user who requested it!
+            if (userTarget && userTarget !== chatJid) {
+                console.log(`[MP3][SEND_PRIVATE] Delivering audio to user PM: ${userTarget}...`);
                 try {
                     await sendAudioTo(userTarget, null);
-                } catch (directErr) {
-                    console.warn(`[MP3] Could not deliver direct private audio to ${userTarget}:`, directErr.message);
+                    console.log(`[MP3][SUCCESS] Direct private audio successfully delivered to ${userTarget}`);
+                } catch (userSendErr) {
+                    console.error(`[MP3][ERROR] Direct private send to ${userTarget} failed:`, userSendErr);
+                    await reply(`⚠️ _Pemberitahuan: Audio gagal dikirimkan ke chat pribadi kamu (${userSendErr.message}). Pastikan chat bot tidak kamu blokir._`);
                 }
             }
 

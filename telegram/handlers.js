@@ -1,10 +1,15 @@
+// ===================================================
+//  NellsBotBase - Telegram Command & Dashboard Handlers
+//  Refactored with single-message status edits,
+//  debouncing, and clean state tracking
+// ===================================================
+
 const { getBot } = require('./bot');
 const chalk = require('chalk');
+const statusManager = require('./TelegramStatusManager');
 
 const userStates = new Map();
 const userPromptMessages = new Map(); // chatId -> messageId (for cleaning temporary input prompts)
-const userDashboardMessages = new Map(); // chatId -> messageId (for editing existing dashboard view)
-const sessionStatusMessages = new Map(); // sessionId -> { chatId, messageId, lastText } (for editing status in place)
 const activePairingLocks = new Set();
 
 const MAIN_KEYBOARD = {
@@ -33,7 +38,7 @@ class TelegramHandlers {
         this.sessionManager = sessionManager;
         this.bot = bot;
 
-        // Route events to Telegram using in-place message edits to prevent spam
+        // Route session events to Telegram using the throttled status manager
         sessionManager.on('status', async (info) => {
             console.log(chalk.cyan(`[TELEGRAM EVENT] Session ${info.sessionId} status changed to ${info.status}`));
             try {
@@ -62,32 +67,10 @@ class TelegramHandlers {
                     text += `\n\n🎉 _Bot WhatsApp berhasil terhubung dan siap digunakan 24/7!_`;
                 }
 
-                // Check if an existing status message can be edited in place
-                const existingMsg = sessionStatusMessages.get(info.sessionId);
-                if (existingMsg && existingMsg.chatId === info.userId) {
-                    try {
-                        if (existingMsg.lastText !== text) {
-                            await bot.editMessageText(text, {
-                                chat_id: info.userId,
-                                message_id: existingMsg.messageId,
-                                parse_mode: 'Markdown'
-                            });
-                            existingMsg.lastText = text;
-                        }
-                        return;
-                    } catch (editErr) {
-                        // If edit fails (e.g. message was removed), fall through to sending a new one
-                    }
-                }
-
-                const sent = await bot.sendMessage(info.userId, text, { parse_mode: 'Markdown' });
-                sessionStatusMessages.set(info.sessionId, {
-                    chatId: info.userId,
-                    messageId: sent.message_id,
-                    lastText: text
-                });
+                // Update the status message in-place for this session
+                await statusManager.setStatus(bot, info.userId, info.sessionId, text);
             } catch (err) {
-                console.error('Failed to send or edit status update to Telegram', err);
+                console.error('Failed to update status in TelegramHandlers:', err);
             }
         });
 
@@ -105,47 +88,14 @@ class TelegramHandlers {
 
     static async handleStatus(msg) {
         const chatId = msg.chat.id;
-        await this.sendStatusDashboard(chatId);
-    }
-
-    static async sendStatusDashboard(chatId, messageId = null) {
-        const sessions = this.sessionManager.getUserSessions(chatId);
-        
-        let text = `📊 *RINGKASAN STATUS WHATSAPP*\nTotal Nomor: *${sessions.length}*\n\n`;
-        
-        if (sessions.length === 0) {
-            text += `Anda belum menambahkan nomor satupun.\nSilahkan klik menu *➕ Tambah Nomor*.`;
-        } else {
-            sessions.forEach((sess, idx) => {
-                let emoji = '🔴';
-                if (sess.status === 'ONLINE') emoji = '🟢';
-                else if (sess.status === 'CONNECTING') emoji = '🟡';
-                else if (sess.status === 'PAIRING') emoji = '🔵';
-                else if (sess.status === 'LOGGED_OUT') emoji = '⚠️';
-
-                text += `${idx + 1}. ${emoji} \`${sess.phoneNumber || 'Belum diatur'}\` — *${sess.status}*\n`;
-            });
-        }
-
-        if (messageId) {
-            try {
-                await this.bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
-            } catch (_) {}
-        } else {
-            const prev = userDashboardMessages.get(chatId);
-            if (prev) {
-                try { await this.bot.deleteMessage(chatId, prev); } catch (_) {}
-            }
-            const sent = await this.bot.sendMessage(chatId, text, { parse_mode: 'Markdown', ...MAIN_KEYBOARD });
-            userDashboardMessages.set(chatId, sent.message_id);
-        }
+        await this.sendDetailedSessions(chatId);
     }
 
     static async handleMessage(msg) {
         const chatId = msg.chat.id;
         const text = msg.text || '';
         
-        // Skip commands
+        // Skip slash commands
         if (text.startsWith('/')) return;
 
         // Handle states
@@ -203,12 +153,7 @@ class TelegramHandlers {
                     await this.bot.editMessageText(txt, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
                 } catch(_) {}
             } else {
-                const prev = userDashboardMessages.get(chatId);
-                if (prev) {
-                    try { await this.bot.deleteMessage(chatId, prev); } catch (_) {}
-                }
-                const sent = await this.bot.sendMessage(chatId, txt, { parse_mode: 'Markdown', ...MAIN_KEYBOARD });
-                userDashboardMessages.set(chatId, sent.message_id);
+                await statusManager.setStatus(this.bot, chatId, 'dashboard', txt, { ...MAIN_KEYBOARD });
             }
             return;
         }
@@ -275,15 +220,9 @@ class TelegramHandlers {
                     });
                 } catch (_) {}
             } else {
-                const prev = userDashboardMessages.get(chatId);
-                if (prev) {
-                    try { await this.bot.deleteMessage(chatId, prev); } catch (_) {}
-                }
-                const sent = await this.bot.sendMessage(chatId, text, {
-                    parse_mode: 'Markdown',
+                await statusManager.setStatus(this.bot, chatId, 'dashboard', text, {
                     reply_markup: { inline_keyboard: inlineKeyboard }
                 });
-                userDashboardMessages.set(chatId, sent.message_id);
             }
             return;
         }
@@ -322,15 +261,9 @@ class TelegramHandlers {
                 });
             } catch (_) {}
         } else {
-            const prev = userDashboardMessages.get(chatId);
-            if (prev) {
-                try { await this.bot.deleteMessage(chatId, prev); } catch (_) {}
-            }
-            const sent = await this.bot.sendMessage(chatId, text, {
-                parse_mode: 'Markdown',
+            await statusManager.setStatus(this.bot, chatId, 'dashboard', text, {
                 reply_markup: { inline_keyboard: inlineKeyboard }
             });
-            userDashboardMessages.set(chatId, sent.message_id);
         }
     }
 
@@ -352,22 +285,18 @@ class TelegramHandlers {
             userPromptMessages.delete(chatId);
         }
 
-        let progressMsg;
+        const operationKey = `add_${phone}`;
+
         try {
-            progressMsg = await this.bot.sendMessage(
+            await statusManager.setStatus(
+                this.bot,
                 chatId,
+                operationKey,
                 `🔄 *Menyiapkan Sesi Baru*\n\nNomor: \`${phone}\`\nStatus: *Inisialisasi koneksi...*\n_Mohon tunggu pairing code digenerate..._`,
-                { parse_mode: 'Markdown', ...MAIN_KEYBOARD }
+                MAIN_KEYBOARD
             );
 
             const session = await this.sessionManager.createSession(chatId, phone);
-
-            // Register progress message so status changes edit it directly
-            sessionStatusMessages.set(session.sessionId, {
-                chatId,
-                messageId: progressMsg.message_id,
-                lastText: ''
-            });
 
             setTimeout(async () => {
                 try {
@@ -381,31 +310,17 @@ class TelegramHandlers {
                                          `2. Klik *Tautkan Perangkat*\n` +
                                          `3. Pilih *Tautkan dengan nomor telepon saja*\n` +
                                          `4. Masukkan kode 8 digit di atas.`;
-                        await this.bot.editMessageText(pairText, {
-                            chat_id: chatId,
-                            message_id: progressMsg.message_id,
-                            parse_mode: 'Markdown'
-                        });
-                        sessionStatusMessages.set(session.sessionId, {
-                            chatId,
-                            messageId: progressMsg.message_id,
-                            lastText: pairText
-                        });
+
+                        await statusManager.setStatus(this.bot, chatId, operationKey, pairText);
                     } else if (session.status === 'ONLINE') {
                         const onlineText = `🟢 *Nomor \`${phone}\` sudah ONLINE dan siap digunakan!*`;
-                        await this.bot.editMessageText(onlineText, {
-                            chat_id: chatId,
-                            message_id: progressMsg.message_id,
-                            parse_mode: 'Markdown'
-                        });
+                        await statusManager.finishStatus(this.bot, chatId, operationKey, onlineText);
                     } else {
-                        await this.bot.editMessageText(
-                            `⚠️ Gagal generate pairing code untuk \`${phone}\`. Status: *${session.status}*`,
-                            {
-                                chat_id: chatId,
-                                message_id: progressMsg.message_id,
-                                parse_mode: 'Markdown'
-                            }
+                        await statusManager.setStatus(
+                            this.bot,
+                            chatId,
+                            operationKey,
+                            `⚠️ Gagal generate pairing code untuk \`${phone}\`. Status: *${session.status}*`
                         );
                     }
                 } catch (timeoutErr) {
@@ -417,19 +332,12 @@ class TelegramHandlers {
 
         } catch (err) {
             activePairingLocks.delete(phone);
-            if (progressMsg) {
-                try {
-                    await this.bot.editMessageText(`❌ *Gagal menambahkan nomor:* ${err.message}`, {
-                        chat_id: chatId,
-                        message_id: progressMsg.message_id,
-                        parse_mode: 'Markdown'
-                    });
-                } catch (_) {
-                    await this.bot.sendMessage(chatId, `❌ Gagal menambahkan nomor: ${err.message}`, MAIN_KEYBOARD);
-                }
-            } else {
-                await this.bot.sendMessage(chatId, `❌ Gagal menambahkan nomor: ${err.message}`, MAIN_KEYBOARD);
-            }
+            await statusManager.setStatus(
+                this.bot,
+                chatId,
+                operationKey,
+                `❌ *Gagal menambahkan nomor:* ${err.message}`
+            );
         }
     }
 
@@ -477,7 +385,7 @@ class TelegramHandlers {
         else if (action === 'repair') {
             const session = this.sessionManager.getSession(sessionId);
             if (session && session.userId === chatId.toString()) {
-                await this.bot.answerCallbackQuery(query.id, { text: 'Mereset kredensial dan menyiapkan pairing baru...' }).catch(()=>{});
+                await this.bot.answerCallbackQuery(query.id, { text: 'Mereset & menyiapkan pairing baru...' }).catch(()=>{});
                 try {
                     await this.bot.editMessageText(
                         `🔄 *Mereset Sesi WhatsApp*\nSedang membersihkan data lama dan meminta pairing code baru untuk \`${session.phoneNumber}\`...\n_Mohon tunggu beberapa detik..._`,
@@ -514,7 +422,7 @@ class TelegramHandlers {
                             );
                         } else {
                             await this.bot.editMessageText(
-                                `⚠️ Gagal generate pairing code baru untuk \`${session.phoneNumber}\`. Silakan coba lagi nanti.`,
+                                `⚠️ Gagal generate pairing code baru untuk \`${session.phoneNumber}\`. Status: *${session.status}*`,
                                 {
                                     chat_id: chatId,
                                     message_id: messageId,
@@ -569,7 +477,7 @@ class TelegramHandlers {
             const phone = session?.phoneNumber || sessionId;
             if (session && session.userId === chatId.toString()) {
                 await this.sessionManager.deleteSession(sessionId);
-                sessionStatusMessages.delete(sessionId);
+                statusManager.clearSession(chatId, sessionId);
                 await this.bot.answerCallbackQuery(query.id, { text: 'Sesi berhasil dihapus.' }).catch(()=>{});
                 await this.bot.editMessageText(
                     `🗑 *Sesi \`${phone}\` telah dihapus.*\nData autentikasi berhasil dibersihkan dari server.`,
@@ -612,12 +520,7 @@ class TelegramHandlers {
                 await this.bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
             } catch (_) {}
         } else {
-            const prev = userDashboardMessages.get(chatId);
-            if (prev) {
-                try { await this.bot.deleteMessage(chatId, prev); } catch (_) {}
-            }
-            const sent = await this.bot.sendMessage(chatId, text, { parse_mode: 'Markdown', ...MAIN_KEYBOARD });
-            userDashboardMessages.set(chatId, sent.message_id);
+            await statusManager.setStatus(this.bot, chatId, 'dashboard', text, { ...MAIN_KEYBOARD });
         }
     }
 }

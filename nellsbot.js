@@ -10,6 +10,27 @@ const sharp = require('sharp');
 const util = require('util');
 const { spawn, exec, execSync } = require('child_process');
 const plugins = require('./lib/plugins');
+const { resolveSenderJid } = require('./lib/target');
+
+// Cache group metadata for 2 minutes to prevent Baileys 429 rate limits
+const groupMetaCache = new Map();
+async function getCachedGroupMetadata(sock, chatJid) {
+    if (!sock || !chatJid) return null;
+    const cached = groupMetaCache.get(chatJid);
+    const now = Date.now();
+    if (cached && (now - cached.timestamp < 120000)) {
+        return cached.data;
+    }
+    try {
+        const meta = await sock.groupMetadata(chatJid);
+        if (meta) {
+            groupMetaCache.set(chatJid, { data: meta, timestamp: now });
+        }
+        return meta;
+    } catch (_) {
+        return cached ? cached.data : null;
+    }
+}
 
 const {
     default: baileys,
@@ -148,15 +169,19 @@ module.exports = async (sock, m, chatUpdate, store, session) => {
         const mime = (quoted.msg || quoted).mimetype || '';
         const qmsg = (quoted.msg || quoted);
         const isMedia = /image|video|sticker|audio/.test(mime);
-        const groupMetadata = isGroup ? await sock.groupMetadata(m.chat).catch(() => {}) : "";
+        const groupMetadata = isGroup ? await getCachedGroupMetadata(sock, m.chat) : null;
         const groupOwner = isGroup ? groupMetadata?.owner : "";
         const groupName = isGroup ? groupMetadata?.subject : "";
         const participants = isGroup ? (groupMetadata?.participants || []) : [];
         const groupAdminParticipants = isGroup ? participants.filter((v) => v.admin !== null) : [];
         const groupAdmins = groupAdminParticipants.map(v => v.id);
         const groupMembers = isGroup ? groupMetadata?.participants : [];
-        const isGroupAdmins = isGroup ? groupAdmins.includes(m.sender) : false;
-        const botLid = isGroup ? sock.user?.lid : "";
+
+        // Accurately resolve genuine sender JID and LID mapping
+        const senderResolution = await resolveSenderJid(sock, m, groupMetadata);
+        const senderJid = senderResolution.jid || normalizeAccessJid(sender);
+        m.senderJid = senderJid;
+
         const sameUser = (a, b) => {
             if (!a || !b) return false;
             try {
@@ -165,11 +190,28 @@ module.exports = async (sock, m, chatUpdate, store, session) => {
                 return false;
             }
         };
+
+        const isGroupAdmins = isGroup ? groupAdminParticipants.some(p => {
+            const pid = String(p.id || "");
+            const pphone = String(p.phoneNumber || "");
+            const plid = String(p.lid || "");
+            return sameUser(pid, senderJid) || sameUser(pphone, senderJid) ||
+                   sameUser(plid, senderJid) || sameUser(pid, m.sender) ||
+                   sameUser(pphone, m.sender) || sameUser(plid, m.sender);
+        }) : false;
+
+        const botLid = isGroup ? sock.user?.lid : "";
+        const cleanBotDigits = botNumber.replace(/[^0-9]/g, '');
         const isBotGroupAdmins = isGroup ? groupAdminParticipants.some(participant => {
-            return sameUser(participant.id, botNumber) ||
-                sameUser(participant.phoneNumber, botNumber) ||
-                sameUser(participant.id, botLid) ||
-                sameUser(participant.phoneNumber, botLid);
+            const pid = String(participant.id || "");
+            const pphone = String(participant.phoneNumber || "");
+            const plid = String(participant.lid || "");
+            return sameUser(pid, botNumber) ||
+                sameUser(pphone, botNumber) ||
+                sameUser(plid, botLid) ||
+                sameUser(pid, botLid) ||
+                (cleanBotDigits && pid.replace(/[^0-9]/g, '') === cleanBotDigits) ||
+                (cleanBotDigits && pphone.replace(/[^0-9]/g, '') === cleanBotDigits);
         }) : false;
         const isBotAdmins = isBotGroupAdmins;
         const isAdmins = isGroupAdmins;
@@ -210,6 +252,7 @@ module.exports = async (sock, m, chatUpdate, store, session) => {
             isMedia,
             from,
             sender,
+            senderJid,
             senderNumber,
             botNumber,
             pushname,
