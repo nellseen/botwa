@@ -1,7 +1,7 @@
 // ===================================================
 //  NellsBotBase
 //  Creator : NellsBotBase
-//  Updated : 13 September 2026
+//  Updated : 29 September 2026
 // ===================================================
 
 const fs = require("fs");
@@ -9,10 +9,35 @@ const path = require("path");
 const { generateWAMessageFromContent } = require("@itsliaaa/baileys");
 
 const DATABASE = path.join(process.cwd(), "lib/database/antilink.json");
-const GROUP_LINK = /https?:\/\/chat\.whatsapp\.com\/[A-Za-z0-9_-]+/i;
+
+// Comprehensive URL & Domain Matchers
+const URL_PROTOCOL_REGEX = /(?:https?:\/\/|ftp:\/\/|www\.)[^\s/$.?#].[^\s]*/i;
+const SOCIAL_SHORT_REGEX = /\b(?:wa\.me|t\.me|bit\.ly|s\.id|cutt\.ly|tinyurl\.com|shorturl\.at|linktr\.ee|chat\.whatsapp\.com|whatsapp\.com\/channel|discord\.gg|instagram\.com|tiktok\.com|youtu\.be)\/[a-zA-Z0-9_\-\.\/]+/i;
+const DOMAIN_REGEX = /\b[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.(?:com|org|net|edu|gov|id|io|me|co|xyz|my|info|biz|top|live|site|online|app|dev|pro|ai|cc|gg|link|tv|club|store|tech|space|shop|click|icu|vip|work|win|mobi|fun|news|today|page|website|agency|life|world|cloud|group|zone|social|digital|network|center|games|ltd|media|pub|company|fit|solutions|asia|sg|us|uk|de|ru|in|br|fr|au|ca|cn|jp)(?:\b|\/|\?|#)[^\s]*/i;
+
+/**
+ * Accurately detects any link/URL in text while ignoring normal messages,
+ * decimal numbers (12.5), clock time (12.30), versions (1.0.0), and ellipses (...).
+ */
+function containsAnyLink(text) {
+    if (!text || typeof text !== "string") return false;
+    const clean = text.trim();
+    if (!clean) return false;
+
+    if (URL_PROTOCOL_REGEX.test(clean)) return true;
+    if (SOCIAL_SHORT_REGEX.test(clean)) return true;
+    if (DOMAIN_REGEX.test(clean)) return true;
+
+    return false;
+}
 
 function readState() {
     try {
+        if (!fs.existsSync(DATABASE)) {
+            fs.mkdirSync(path.dirname(DATABASE), { recursive: true });
+            fs.writeFileSync(DATABASE, "{}", "utf8");
+            return {};
+        }
         const data = JSON.parse(fs.readFileSync(DATABASE, "utf8"));
         return data && typeof data === "object" ? data : {};
     } catch (_) {
@@ -21,77 +46,131 @@ function readState() {
 }
 
 function writeState(state) {
-    fs.writeFileSync(DATABASE, JSON.stringify(state, null, 2));
+    try {
+        fs.mkdirSync(path.dirname(DATABASE), { recursive: true });
+        fs.writeFileSync(DATABASE, JSON.stringify(state, null, 2));
+    } catch (err) {
+        console.error("[ANTILINK] Error writing database:", err);
+    }
 }
 
 async function menuReply(sock, m, context, title, lines) {
     const { botName, prefix, thumb } = context;
-    const message = generateWAMessageFromContent(m.chat, {
-        buttonsMessage: {
-            buttons: [{
-                buttonId: `${prefix}antilink on`,
-                buttonText: { displayText: "On" },
-                type: 1
-            }, {
-                buttonId: `${prefix}antilink off`,
-                buttonText: { displayText: "Off" },
-                type: 1
-            }],
-            locationMessage: {
-                degreesLatitude: 0,
-                degreesLongitude: 0,
-                name: botName,
-                address: global.namaown || "WhatsApp Bot",
-                jpegThumbnail: thumb ? thumb.toString("base64") : ""
-            },
-            contentText: `\`「 ${botName} 」\``,
-            footerText: `\`「 ${title} 」\`\n${lines.join("\n")}\n\n_*Tekan tombol di bawah untuk melihat semua menu*_`,
-            headerType: 6
-        }
-    }, { userJid: m.chat, upload: sock.waUploadToServer });
-    return sock.relayMessage(m.chat, message.message, { messageId: message.key.id });
+    try {
+        const message = generateWAMessageFromContent(m.chat, {
+            buttonsMessage: {
+                buttons: [{
+                    buttonId: `${prefix}antilink on`,
+                    buttonText: { displayText: "On" },
+                    type: 1
+                }, {
+                    buttonId: `${prefix}antilink off`,
+                    buttonText: { displayText: "Off" },
+                    type: 1
+                }],
+                locationMessage: {
+                    degreesLatitude: 0,
+                    degreesLongitude: 0,
+                    name: botName,
+                    address: global.namaown || "WhatsApp Bot",
+                    jpegThumbnail: thumb ? thumb.toString("base64") : ""
+                },
+                contentText: `\`「 ${botName} 」\``,
+                footerText: `\`「 ${title} 」\`\n${lines.join("\n")}\n\n_*Pilih tombol di bawah untuk mengubah pengaturan*_`,
+                headerType: 6
+            }
+        }, { userJid: m.chat, upload: sock.waUploadToServer });
+        return await sock.relayMessage(m.chat, message.message, { messageId: message.key.id });
+    } catch (_) {
+        // Fallback to plain text reply if button message fails
+        return context.reply(`\`「 ${title} 」\`\n\n${lines.join("\n")}`);
+    }
 }
 
 module.exports = {
     name: "antilink",
     category: "grup",
     command: ["antilink"],
-    owner: true,
+    admin: true,
     group: true,
-    description: "Aktifkan atau matikan penghapus link grup WhatsApp",
+    description: "Hapus otomatis setiap link atau tautan yang dikirim di grup",
     before: async context => {
-        const { body, prefix, isGroup, isBotAdmins, m, sock } = context;
-        if (!isGroup || body.trim().startsWith(prefix) || !GROUP_LINK.test(body)) return false;
+        const { body, budy, prefix, isGroup, isBotAdmins, m, sock } = context;
+
+        // Antilink only operates in groups and never deletes the bot's own messages
+        if (!isGroup || m.key.fromMe) return false;
 
         const state = readState();
-        if (!state[m.chat]?.enabled || !isBotAdmins) return false;
+        if (!state[m.chat]?.enabled) return false;
+
+        // Skip antilink command invocations
+        const rawBody = (body || "").trim();
+        if (prefix && rawBody.startsWith(prefix + "antilink")) return false;
+
+        // Check all potential message text containers for links
+        const textToCheck = [
+            m.text,
+            body,
+            budy,
+            m.message?.conversation,
+            m.message?.extendedTextMessage?.text,
+            m.message?.imageMessage?.caption,
+            m.message?.videoMessage?.caption,
+            m.message?.documentMessage?.caption
+        ].filter(Boolean).join(" ");
+
+        if (!containsAnyLink(textToCheck)) return false;
+
+        // Verify bot has group admin permissions to delete other participants' messages
+        if (!isBotAdmins) {
+            console.warn(`[ANTILINK] Terdeteksi link di grup ${m.chat}, namun bot bukan admin grup sehingga tidak bisa menghapus.`);
+            return false;
+        }
 
         try {
-            await sock.sendMessage(m.chat, { delete: m.key });
+            // Delete message as fast as possible
+            const deleteKey = {
+                remoteJid: m.chat,
+                fromMe: false,
+                id: m.key.id,
+                participant: m.key.participant || m.sender
+            };
+            await sock.sendMessage(m.chat, { delete: deleteKey });
+
+            // Notify group with participant mention
+            const senderNumber = (m.sender || "").split("@")[0].replace(/[^0-9]/g, "");
+            await sock.sendMessage(m.chat, {
+                text: `⚠️ *Pesan Dihapus (Antilink)*\n@${senderNumber}, dilarang mengirim link/tautan apa pun di grup ini karena proteksi Antilink aktif.`,
+                mentions: [m.sender]
+            });
+            return true;
         } catch (error) {
-            console.error(`[ANTILINK] ${error.message}`);
+            console.error(`[ANTILINK] Gagal menghapus pesan link: ${error.message}`);
+            return false;
         }
-        return true;
     },
     run: async context => {
-        const { sock, m, args, isGroup, isBotAdmins } = context;
-        if (!isGroup) return context.reply("*Command ini hanya bisa dipakai di grup.*");
+        const { sock, m, args, isGroup, isBotAdmins, isGroupAdmins, isOwner, isCreator, reply, groupName, prefix } = context;
+
+        if (!isGroup) return reply("*Command ini hanya bisa dipakai di dalam grup.*");
+
+        if (!isGroupAdmins && !isOwner && !isCreator) {
+            return reply("*Fitur ini khusus untuk admin grup dan owner bot!*");
+        }
 
         const action = String(args[0] || "").toLowerCase();
         if (!["on", "off"].includes(action)) {
+            const state = readState();
+            const isCurrentlyOn = !!state[m.chat]?.enabled;
             return menuReply(sock, m, context, "Antilink Grup", [
-                "> Status : *Gunakan on atau off*",
-                "> Contoh : */antilink on*",
-                "> Contoh : */antilink off*"
+                `> Status Saat Ini : *${isCurrentlyOn ? "AKTIF (ON)" : "NONAKTIF (OFF)"}*`,
+                `> Format : *${prefix}antilink on* atau *${prefix}antilink off*`,
+                `> Keterangan : *Menghapus semua link/URL apa pun dari grup otomatis*`
             ]);
         }
 
         if (action === "on" && !isBotAdmins) {
-            return menuReply(sock, m, context, "Antilink Grup", [
-                "> Status : *Gagal diaktifkan*",
-                "> Bot bukan admin di grup ini*",
-                "> Jadikan bot admin terlebih dahulu"
-            ]);
+            return reply("⚠️ *Gagal Mengaktifkan Antilink!*\nBot harus menjadi *Admin Grup* terlebih dahulu agar memiliki izin untuk menghapus pesan anggota lain.");
         }
 
         const state = readState();
@@ -102,9 +181,9 @@ module.exports = {
         writeState(state);
 
         return menuReply(sock, m, context, "Antilink Grup", [
-            `> Grup : *${context.groupName || m.chat}*`,
-            `> Status : *${action === "on" ? "Aktif" : "Nonaktif"}*`,
-            `> Link grup WhatsApp akan ${action === "on" ? "dihapus otomatis" : "dibiarkan"}`
+            `> Grup : *${groupName || m.chat}*`,
+            `> Status : *${action === "on" ? "AKTIF (ON)" : "NONAKTIF (OFF)"}*`,
+            `> Tindakan : *Semua format link (http, https, www, domain, shortlink) ${action === "on" ? "akan langsung dihapus seketika" : "dibiarkan"}*`
         ]);
     }
 };

@@ -2,6 +2,9 @@ const { getBot } = require('./bot');
 const chalk = require('chalk');
 
 const userStates = new Map();
+const userPromptMessages = new Map(); // chatId -> messageId (for cleaning temporary input prompts)
+const userDashboardMessages = new Map(); // chatId -> messageId (for editing existing dashboard view)
+const sessionStatusMessages = new Map(); // sessionId -> { chatId, messageId, lastText } (for editing status in place)
 const activePairingLocks = new Set();
 
 const MAIN_KEYBOARD = {
@@ -30,7 +33,7 @@ class TelegramHandlers {
         this.sessionManager = sessionManager;
         this.bot = bot;
 
-        // Route events to Telegram
+        // Route events to Telegram using in-place message edits to prevent spam
         sessionManager.on('status', async (info) => {
             console.log(chalk.cyan(`[TELEGRAM EVENT] Session ${info.sessionId} status changed to ${info.status}`));
             try {
@@ -44,7 +47,7 @@ class TelegramHandlers {
 
                 let text = `${statusEmoji} *WhatsApp Status Update*\n\n` +
                            `📱 *Nomor:* \`${info.phoneNumber || 'Belum diatur'}\`\n` +
-                           `⚡ *Status:* ${info.status}`;
+                           `⚡ *Status:* *${info.status}*`;
 
                 if (info.reason) {
                     text += `\nℹ️ *Keterangan:* ${info.reason}`;
@@ -54,14 +57,37 @@ class TelegramHandlers {
                     text += `\n\n🔢 *Pairing Code:* \`${info.pairingCode}\`\n` +
                             `_Masukkan kode ini di WhatsApp: Perangkat Tertaut > Tautkan Perangkat > Tautkan dengan nomor telepon saja._`;
                 } else if (info.status === 'LOGGED_OUT') {
-                    text += `\n\n⚠️ _Sesi telah logout dari WhatsApp. Gunakan menu untuk Reset & Re-pair nomor._`;
+                    text += `\n\n⚠️ _Sesi telah logout dari WhatsApp. Silakan gunakan menu Reset & Re-pair._`;
                 } else if (info.status === 'ONLINE') {
-                    text += `\n\n🎉 _Bot WhatsApp berhasil terhubung dan siap menerima pesan!_`;
+                    text += `\n\n🎉 _Bot WhatsApp berhasil terhubung dan siap digunakan 24/7!_`;
                 }
 
-                await bot.sendMessage(info.userId, text, { parse_mode: 'Markdown' });
+                // Check if an existing status message can be edited in place
+                const existingMsg = sessionStatusMessages.get(info.sessionId);
+                if (existingMsg && existingMsg.chatId === info.userId) {
+                    try {
+                        if (existingMsg.lastText !== text) {
+                            await bot.editMessageText(text, {
+                                chat_id: info.userId,
+                                message_id: existingMsg.messageId,
+                                parse_mode: 'Markdown'
+                            });
+                            existingMsg.lastText = text;
+                        }
+                        return;
+                    } catch (editErr) {
+                        // If edit fails (e.g. message was removed), fall through to sending a new one
+                    }
+                }
+
+                const sent = await bot.sendMessage(info.userId, text, { parse_mode: 'Markdown' });
+                sessionStatusMessages.set(info.sessionId, {
+                    chatId: info.userId,
+                    messageId: sent.message_id,
+                    lastText: text
+                });
             } catch (err) {
-                console.error('Failed to send status update to Telegram', err);
+                console.error('Failed to send or edit status update to Telegram', err);
             }
         });
 
@@ -73,8 +99,8 @@ class TelegramHandlers {
 
     static async handleStart(msg) {
         const chatId = msg.chat.id;
-        const text = `Selamat datang di NellsBotBase Dashboard!\n\nID Anda: ${chatId}\nSilahkan gunakan menu di bawah untuk mengatur WhatsApp session Anda.`;
-        await this.bot.sendMessage(chatId, text, MAIN_KEYBOARD);
+        const text = `👋 *Selamat datang di NellsBotBase Dashboard!*\n\nID Anda: \`${chatId}\`\nSilahkan gunakan menu di bawah untuk mengelola sesi WhatsApp Anda dengan mudah.`;
+        await this.bot.sendMessage(chatId, text, { parse_mode: 'Markdown', ...MAIN_KEYBOARD });
     }
 
     static async handleStatus(msg) {
@@ -85,28 +111,33 @@ class TelegramHandlers {
     static async sendStatusDashboard(chatId, messageId = null) {
         const sessions = this.sessionManager.getUserSessions(chatId);
         
-        let text = `📊 WHATSAPP STATUS\nTotal Number: ${sessions.length}\n\n`;
+        let text = `📊 *RINGKASAN STATUS WHATSAPP*\nTotal Nomor: *${sessions.length}*\n\n`;
         
         if (sessions.length === 0) {
-            text += `Anda belum menambahkan nomor satupun.`;
+            text += `Anda belum menambahkan nomor satupun.\nSilahkan klik menu *➕ Tambah Nomor*.`;
+        } else {
+            sessions.forEach((sess, idx) => {
+                let emoji = '🔴';
+                if (sess.status === 'ONLINE') emoji = '🟢';
+                else if (sess.status === 'CONNECTING') emoji = '🟡';
+                else if (sess.status === 'PAIRING') emoji = '🔵';
+                else if (sess.status === 'LOGGED_OUT') emoji = '⚠️';
+
+                text += `${idx + 1}. ${emoji} \`${sess.phoneNumber || 'Belum diatur'}\` — *${sess.status}*\n`;
+            });
         }
-
-        sessions.forEach(sess => {
-            let emoji = '🔴';
-            if (sess.status === 'ONLINE') emoji = '🟢';
-            else if (sess.status === 'CONNECTING') emoji = '🟡';
-            else if (sess.status === 'PAIRING') emoji = '🔵';
-            else if (sess.status === 'LOGGED_OUT') emoji = '⚠️';
-
-            text += `${emoji} ${sess.phoneNumber} — ${sess.status}\n`;
-        });
 
         if (messageId) {
             try {
-                await this.bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...MAIN_KEYBOARD });
+                await this.bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
             } catch (_) {}
         } else {
-            await this.bot.sendMessage(chatId, text, MAIN_KEYBOARD);
+            const prev = userDashboardMessages.get(chatId);
+            if (prev) {
+                try { await this.bot.deleteMessage(chatId, prev); } catch (_) {}
+            }
+            const sent = await this.bot.sendMessage(chatId, text, { parse_mode: 'Markdown', ...MAIN_KEYBOARD });
+            userDashboardMessages.set(chatId, sent.message_id);
         }
     }
 
@@ -121,6 +152,8 @@ class TelegramHandlers {
         const state = userStates.get(chatId);
         if (state === 'AWAITING_PHONE_NUMBER') {
             userStates.delete(chatId);
+            // Clean up user's typed phone number message to keep chat spotless
+            try { await this.bot.deleteMessage(chatId, msg.message_id); } catch (_) {}
             return this.handleAddNumber(chatId, text);
         }
 
@@ -130,42 +163,63 @@ class TelegramHandlers {
             case '🟢 Status Online':
                 await this.sendDetailedSessions(chatId);
                 break;
-            case '➕ Tambah Nomor':
+            case '➕ Tambah Nomor': {
                 userStates.set(chatId, 'AWAITING_PHONE_NUMBER');
-                await this.bot.sendMessage(chatId, 'Masukkan nomor WhatsApp Anda (contoh: 628123456789):', {
-                    reply_markup: {
-                        force_reply: true,
-                        input_field_placeholder: "628..."
+                const promptMsg = await this.bot.sendMessage(
+                    chatId,
+                    'Masukkan nomor WhatsApp Anda (contoh: `628123456789`):',
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            force_reply: true,
+                            input_field_placeholder: "628..."
+                        }
                     }
-                });
+                );
+                userPromptMessages.set(chatId, promptMsg.message_id);
                 break;
+            }
             case '🔄 Refresh':
-                await this.handleStatus(msg);
+                await this.sendDetailedSessions(chatId);
                 break;
             case '📊 Statistik':
                 await this.sendStats(chatId);
                 break;
             case '⚙️ Settings':
-                await this.bot.sendMessage(chatId, 'Settings per session coming soon.', MAIN_KEYBOARD);
+                await this.bot.sendMessage(chatId, '⚙️ *Pengaturan Sesi WhatsApp*\nFitur pengaturan lanjutan per nomor segera hadir.', { parse_mode: 'Markdown', ...MAIN_KEYBOARD });
                 break;
         }
     }
 
-    static async sendDetailedSessions(chatId, messageId = null) {
+    /**
+     * Renders detailed sessions inside a single editable message with clean navigation.
+     */
+    static async sendDetailedSessions(chatId, messageId = null, targetSessionId = null) {
         const sessions = this.sessionManager.getUserSessions(chatId);
         if (sessions.length === 0) {
-            const txt = 'Anda belum menambahkan nomor. Silahkan klik ➕ Tambah Nomor.';
+            const txt = '📱 *Nomor Saya*\n\nAnda belum menambahkan nomor satupun.\nSilahkan klik menu *➕ Tambah Nomor*.';
             if (messageId) {
                 try {
-                    await this.bot.editMessageText(txt, { chat_id: chatId, message_id: messageId, ...MAIN_KEYBOARD });
+                    await this.bot.editMessageText(txt, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
                 } catch(_) {}
             } else {
-                await this.bot.sendMessage(chatId, txt, MAIN_KEYBOARD);
+                const prev = userDashboardMessages.get(chatId);
+                if (prev) {
+                    try { await this.bot.deleteMessage(chatId, prev); } catch (_) {}
+                }
+                const sent = await this.bot.sendMessage(chatId, txt, { parse_mode: 'Markdown', ...MAIN_KEYBOARD });
+                userDashboardMessages.set(chatId, sent.message_id);
             }
             return;
         }
 
-        for (const sess of sessions) {
+        // Detail view for a specific session
+        if (targetSessionId) {
+            const sess = this.sessionManager.getSession(targetSessionId);
+            if (!sess) {
+                return this.sendDetailedSessions(chatId, messageId, null);
+            }
+
             let emoji = '🔴';
             if (sess.status === 'ONLINE') emoji = '🟢';
             else if (sess.status === 'CONNECTING') emoji = '🟡';
@@ -174,14 +228,20 @@ class TelegramHandlers {
             else if (sess.status === 'LOGGED_OUT') emoji = '⚠️';
             else if (sess.status === 'CONFLICT') emoji = '⛔';
 
-            let text = `${emoji} Nomor: ${sess.phoneNumber}\nStatus: ${sess.status}`;
-            
+            let text = `${emoji} *KONTROL SESI WHATSAPP*\n\n` +
+                       `📱 *Nomor:* \`${sess.phoneNumber || 'Belum diatur'}\`\n` +
+                       `⚡ *Status:* *${sess.status}*\n` +
+                       `🆔 *Session ID:* \`${sess.sessionId}\``;
+
+            if (sess.status === 'PAIRING' && sess.pairingCode) {
+                text += `\n🔢 *Pairing Code:* \`${sess.pairingCode}\``;
+            }
+
             const inlineKeyboard = [];
-            
             if (sess.status === 'ONLINE' || sess.status === 'CONNECTING' || sess.status === 'RECONNECTING') {
                 inlineKeyboard.push([
-                    { text: '🔄 Refresh', callback_data: `refresh_${sess.sessionId}` },
-                    { text: '🔌 Disconnect', callback_data: `disconnect_${sess.sessionId}` }
+                    { text: '🔄 Refresh Status', callback_data: `view_${sess.sessionId}` },
+                    { text: '🔌 Putuskan (Disconnect)', callback_data: `disconnect_${sess.sessionId}` }
                 ]);
             } else if (sess.status === 'LOGGED_OUT') {
                 inlineKeyboard.push([
@@ -189,58 +249,187 @@ class TelegramHandlers {
                 ]);
             } else if (sess.status === 'OFFLINE' || sess.status === 'CONFLICT') {
                 inlineKeyboard.push([
-                    { text: '🔌 Connect', callback_data: `connect_${sess.sessionId}` },
+                    { text: '🔌 Sambungkan (Connect)', callback_data: `connect_${sess.sessionId}` }
                 ]);
             } else if (sess.status === 'PAIRING') {
                 inlineKeyboard.push([
-                    { text: '📋 Pairing Code', callback_data: `pairing_${sess.sessionId}` },
-                    { text: '❌ Cancel', callback_data: `delete_${sess.sessionId}` }
+                    { text: '📋 Lihat Pairing Code', callback_data: `pairing_${sess.sessionId}` },
+                    { text: '❌ Batalkan', callback_data: `delete_${sess.sessionId}` }
                 ]);
             }
-            
+
             inlineKeyboard.push([
-                { text: '🗑 Delete', callback_data: `delete_${sess.sessionId}` }
+                { text: '🗑 Hapus Nomor Ini', callback_data: `delete_${sess.sessionId}` }
+            ]);
+            inlineKeyboard.push([
+                { text: '« Kembali ke Daftar Nomor', callback_data: `list_sessions` }
             ]);
 
-            await this.bot.sendMessage(chatId, text, {
-                reply_markup: {
-                    inline_keyboard: inlineKeyboard
+            if (messageId) {
+                try {
+                    await this.bot.editMessageText(text, {
+                        chat_id: chatId,
+                        message_id: messageId,
+                        parse_mode: 'Markdown',
+                        reply_markup: { inline_keyboard: inlineKeyboard }
+                    });
+                } catch (_) {}
+            } else {
+                const prev = userDashboardMessages.get(chatId);
+                if (prev) {
+                    try { await this.bot.deleteMessage(chatId, prev); } catch (_) {}
                 }
+                const sent = await this.bot.sendMessage(chatId, text, {
+                    parse_mode: 'Markdown',
+                    reply_markup: { inline_keyboard: inlineKeyboard }
+                });
+                userDashboardMessages.set(chatId, sent.message_id);
+            }
+            return;
+        }
+
+        // Consolidated list of all sessions in a single message
+        let text = `📱 *DAFTAR NOMOR WHATSAPP ANDA*\nTotal: *${sessions.length}* nomor terdaftar\n\n`;
+        const inlineKeyboard = [];
+
+        sessions.forEach((sess, idx) => {
+            let emoji = '🔴';
+            if (sess.status === 'ONLINE') emoji = '🟢';
+            else if (sess.status === 'CONNECTING') emoji = '🟡';
+            else if (sess.status === 'RECONNECTING') emoji = '🔄';
+            else if (sess.status === 'PAIRING') emoji = '🔵';
+            else if (sess.status === 'LOGGED_OUT') emoji = '⚠️';
+            else if (sess.status === 'CONFLICT') emoji = '⛔';
+
+            text += `${idx + 1}. ${emoji} \`${sess.phoneNumber || 'Belum diatur'}\` — *${sess.status}*\n`;
+            inlineKeyboard.push([
+                { text: `${emoji} ${sess.phoneNumber || sess.sessionId.slice(0, 10)} (Kontrol)`, callback_data: `view_${sess.sessionId}` }
+            ]);
+        });
+
+        text += `\n_Pilih nomor di atas untuk melihat detail, putuskan, atau pairing ulang._`;
+        inlineKeyboard.push([
+            { text: '🔄 Refresh Semua', callback_data: `refresh_all` }
+        ]);
+
+        if (messageId) {
+            try {
+                await this.bot.editMessageText(text, {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    parse_mode: 'Markdown',
+                    reply_markup: { inline_keyboard: inlineKeyboard }
+                });
+            } catch (_) {}
+        } else {
+            const prev = userDashboardMessages.get(chatId);
+            if (prev) {
+                try { await this.bot.deleteMessage(chatId, prev); } catch (_) {}
+            }
+            const sent = await this.bot.sendMessage(chatId, text, {
+                parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard: inlineKeyboard }
             });
+            userDashboardMessages.set(chatId, sent.message_id);
         }
     }
 
     static async handleAddNumber(chatId, text) {
         const phone = text.replace(/[^0-9]/g, '');
         if (!phone) {
-            return this.bot.sendMessage(chatId, '❌ Nomor tidak valid. Dibatalkan.', MAIN_KEYBOARD);
+            return this.bot.sendMessage(chatId, '❌ Nomor tidak valid. Silakan gunakan format angka seperti `628123456789`.', { parse_mode: 'Markdown', ...MAIN_KEYBOARD });
         }
 
         if (activePairingLocks.has(phone)) {
-            return this.bot.sendMessage(chatId, '⚠️ Sedang memproses nomor ini. Silahkan tunggu.', MAIN_KEYBOARD);
+            return this.bot.sendMessage(chatId, '⚠️ Sedang memproses nomor ini. Silahkan tunggu beberapa saat.', MAIN_KEYBOARD);
         }
         activePairingLocks.add(phone);
 
+        // Delete temporary input prompt to keep the conversation clean
+        const promptMsgId = userPromptMessages.get(chatId);
+        if (promptMsgId) {
+            try { await this.bot.deleteMessage(chatId, promptMsgId); } catch (_) {}
+            userPromptMessages.delete(chatId);
+        }
+
+        let progressMsg;
         try {
-            await this.bot.sendMessage(chatId, `🔄 Sedang menyiapkan session untuk ${phone}...`);
+            progressMsg = await this.bot.sendMessage(
+                chatId,
+                `🔄 *Menyiapkan Sesi Baru*\n\nNomor: \`${phone}\`\nStatus: *Inisialisasi koneksi...*\n_Mohon tunggu pairing code digenerate..._`,
+                { parse_mode: 'Markdown', ...MAIN_KEYBOARD }
+            );
+
             const session = await this.sessionManager.createSession(chatId, phone);
-            
-            // Give it some time to start connecting
+
+            // Register progress message so status changes edit it directly
+            sessionStatusMessages.set(session.sessionId, {
+                chatId,
+                messageId: progressMsg.message_id,
+                lastText: ''
+            });
+
             setTimeout(async () => {
-                const code = await session.requestPairingCode();
-                if (code) {
-                    await this.bot.sendMessage(chatId, `🔵 PAIRING CODE\n\nNomor: ${phone}\nCode: \`${code}\`\n\nSilahkan masukkan di aplikasi WhatsApp Anda.`, { parse_mode: 'Markdown', ...MAIN_KEYBOARD });
-                } else if (session.status === 'ONLINE') {
-                    await this.bot.sendMessage(chatId, `🟢 Nomor ${phone} sudah ONLINE.`, MAIN_KEYBOARD);
-                } else {
-                    await this.bot.sendMessage(chatId, `⚠️ Gagal mendapatkan pairing code. Status: ${session.status}`, MAIN_KEYBOARD);
+                try {
+                    const code = await session.requestPairingCode();
+                    if (code) {
+                        const pairText = `🔵 *PAIRING CODE WHATSAPP*\n\n` +
+                                         `📱 *Nomor:* \`${phone}\`\n` +
+                                         `🔢 *Pairing Code:* \`${code}\`\n\n` +
+                                         `👉 *Langkah di HP:*\n` +
+                                         `1. Buka WhatsApp > *Perangkat Tertaut*\n` +
+                                         `2. Klik *Tautkan Perangkat*\n` +
+                                         `3. Pilih *Tautkan dengan nomor telepon saja*\n` +
+                                         `4. Masukkan kode 8 digit di atas.`;
+                        await this.bot.editMessageText(pairText, {
+                            chat_id: chatId,
+                            message_id: progressMsg.message_id,
+                            parse_mode: 'Markdown'
+                        });
+                        sessionStatusMessages.set(session.sessionId, {
+                            chatId,
+                            messageId: progressMsg.message_id,
+                            lastText: pairText
+                        });
+                    } else if (session.status === 'ONLINE') {
+                        const onlineText = `🟢 *Nomor \`${phone}\` sudah ONLINE dan siap digunakan!*`;
+                        await this.bot.editMessageText(onlineText, {
+                            chat_id: chatId,
+                            message_id: progressMsg.message_id,
+                            parse_mode: 'Markdown'
+                        });
+                    } else {
+                        await this.bot.editMessageText(
+                            `⚠️ Gagal generate pairing code untuk \`${phone}\`. Status: *${session.status}*`,
+                            {
+                                chat_id: chatId,
+                                message_id: progressMsg.message_id,
+                                parse_mode: 'Markdown'
+                            }
+                        );
+                    }
+                } catch (timeoutErr) {
+                    console.error('Error generating pairing code in timeout:', timeoutErr);
+                } finally {
+                    activePairingLocks.delete(phone);
                 }
-                activePairingLocks.delete(phone);
-            }, 5000);
+            }, 4500);
 
         } catch (err) {
             activePairingLocks.delete(phone);
-            await this.bot.sendMessage(chatId, `❌ Gagal menambahkan nomor: ${err.message}`, MAIN_KEYBOARD);
+            if (progressMsg) {
+                try {
+                    await this.bot.editMessageText(`❌ *Gagal menambahkan nomor:* ${err.message}`, {
+                        chat_id: chatId,
+                        message_id: progressMsg.message_id,
+                        parse_mode: 'Markdown'
+                    });
+                } catch (_) {
+                    await this.bot.sendMessage(chatId, `❌ Gagal menambahkan nomor: ${err.message}`, MAIN_KEYBOARD);
+                }
+            } else {
+                await this.bot.sendMessage(chatId, `❌ Gagal menambahkan nomor: ${err.message}`, MAIN_KEYBOARD);
+            }
         }
     }
 
@@ -251,50 +440,97 @@ class TelegramHandlers {
 
         if (!data) return;
 
+        if (data === 'refresh_all' || data === 'list_sessions') {
+            await this.bot.answerCallbackQuery(query.id, { text: 'Diperbarui' }).catch(()=>{});
+            return this.sendDetailedSessions(chatId, messageId, null);
+        }
+
         const separatorIndex = data.indexOf('_');
         if (separatorIndex === -1) return;
         const action = data.slice(0, separatorIndex);
         const sessionId = data.slice(separatorIndex + 1);
         
-        if (action === 'refresh') {
-            await this.bot.answerCallbackQuery(query.id, { text: 'Refreshing...' });
-            await this.bot.deleteMessage(chatId, messageId).catch(()=>{});
-            await this.sendDetailedSessions(chatId);
+        if (action === 'view') {
+            await this.bot.answerCallbackQuery(query.id).catch(()=>{});
+            await this.sendDetailedSessions(chatId, messageId, sessionId);
+        }
+        else if (action === 'refresh') {
+            await this.bot.answerCallbackQuery(query.id, { text: 'Refreshing...' }).catch(()=>{});
+            await this.sendDetailedSessions(chatId, messageId, sessionId);
         } 
         else if (action === 'disconnect') {
             const session = this.sessionManager.getSession(sessionId);
             if (session && session.userId === chatId.toString()) {
                 session.disconnect();
-                await this.bot.answerCallbackQuery(query.id, { text: 'Disconnected.' });
-                await this.bot.deleteMessage(chatId, messageId).catch(()=>{});
-                await this.sendDetailedSessions(chatId);
+                await this.bot.answerCallbackQuery(query.id, { text: 'Koneksi diputuskan.' }).catch(()=>{});
+                await this.sendDetailedSessions(chatId, messageId, sessionId);
             }
         }
         else if (action === 'connect') {
             const session = this.sessionManager.getSession(sessionId);
             if (session && session.userId === chatId.toString()) {
                 session.connect();
-                await this.bot.answerCallbackQuery(query.id, { text: 'Connecting...' });
-                await this.bot.deleteMessage(chatId, messageId).catch(()=>{});
-                await this.sendDetailedSessions(chatId);
+                await this.bot.answerCallbackQuery(query.id, { text: 'Menghubungkan...' }).catch(()=>{});
+                await this.sendDetailedSessions(chatId, messageId, sessionId);
             }
         }
         else if (action === 'repair') {
             const session = this.sessionManager.getSession(sessionId);
             if (session && session.userId === chatId.toString()) {
-                await this.bot.answerCallbackQuery(query.id, { text: 'Mereset kredensial dan menyiapkan pairing baru...' });
+                await this.bot.answerCallbackQuery(query.id, { text: 'Mereset kredensial dan menyiapkan pairing baru...' }).catch(()=>{});
+                try {
+                    await this.bot.editMessageText(
+                        `🔄 *Mereset Sesi WhatsApp*\nSedang membersihkan data lama dan meminta pairing code baru untuk \`${session.phoneNumber}\`...\n_Mohon tunggu beberapa detik..._`,
+                        {
+                            chat_id: chatId,
+                            message_id: messageId,
+                            parse_mode: 'Markdown'
+                        }
+                    );
+                } catch (_) {}
+
                 session.resetAuthState();
                 await session.connect();
+
                 setTimeout(async () => {
-                    const code = await session.requestPairingCode();
-                    if (code) {
-                        await this.bot.sendMessage(chatId, `🔵 *PAIRING CODE BARU*\n\nNomor: \`${session.phoneNumber}\`\nCode: \`${code}\`\n\nSilahkan masukkan di WhatsApp: *Perangkat Tertaut* > *Tautkan Perangkat* > *Tautkan dengan nomor telepon saja*.`, { parse_mode: 'Markdown', ...MAIN_KEYBOARD });
-                    } else {
-                        await this.bot.sendMessage(chatId, `⚠️ Gagal generate pairing code baru. Silakan coba lagi nanti.`, MAIN_KEYBOARD);
+                    try {
+                        const code = await session.requestPairingCode();
+                        if (code) {
+                            await this.bot.editMessageText(
+                                `🔵 *PAIRING CODE BARU*\n\n` +
+                                `📱 *Nomor:* \`${session.phoneNumber}\`\n` +
+                                `🔢 *Code:* \`${code}\`\n\n` +
+                                `👉 Masukkan di WhatsApp: *Perangkat Tertaut* > *Tautkan Perangkat* > *Tautkan dengan nomor telepon saja*.`,
+                                {
+                                    chat_id: chatId,
+                                    message_id: messageId,
+                                    parse_mode: 'Markdown',
+                                    reply_markup: {
+                                        inline_keyboard: [
+                                            [{ text: '« Kembali ke Daftar Nomor', callback_data: `list_sessions` }]
+                                        ]
+                                    }
+                                }
+                            );
+                        } else {
+                            await this.bot.editMessageText(
+                                `⚠️ Gagal generate pairing code baru untuk \`${session.phoneNumber}\`. Silakan coba lagi nanti.`,
+                                {
+                                    chat_id: chatId,
+                                    message_id: messageId,
+                                    parse_mode: 'Markdown',
+                                    reply_markup: {
+                                        inline_keyboard: [
+                                            [{ text: '« Kembali ke Daftar Nomor', callback_data: `list_sessions` }]
+                                        ]
+                                    }
+                                }
+                            );
+                        }
+                    } catch (err) {
+                        console.error('Error repairing session in timeout:', err);
                     }
                 }, 4000);
-                await this.bot.deleteMessage(chatId, messageId).catch(()=>{});
-                await this.sendDetailedSessions(chatId);
             }
         }
         else if (action === 'pairing') {
@@ -302,40 +538,57 @@ class TelegramHandlers {
             if (session && session.userId === chatId.toString()) {
                 const code = await session.requestPairingCode();
                 if (code) {
-                    await this.bot.answerCallbackQuery(query.id, { text: `Code: ${code}`, show_alert: true });
+                    await this.bot.answerCallbackQuery(query.id, { text: `Kode: ${code}`, show_alert: true });
                 } else {
-                    await this.bot.answerCallbackQuery(query.id, { text: 'Gagal generate code. Coba lagi.' });
+                    await this.bot.answerCallbackQuery(query.id, { text: `Status: ${session.status}. Belum ada pairing code.` });
                 }
             }
         }
         else if (action === 'delete') {
             const session = this.sessionManager.getSession(sessionId);
             if (session && session.userId === chatId.toString()) {
-                await this.bot.editMessageText(`⚠️ Hapus session ${session.phoneNumber}?\nSeluruh data authentication akan dihapus permanen.`, {
-                    chat_id: chatId,
-                    message_id: messageId,
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '✅ Ya, Hapus', callback_data: `confirmdelete_${sessionId}` }],
-                            [{ text: '❌ Batal', callback_data: `refresh_${sessionId}` }]
-                        ]
+                await this.bot.editMessageText(
+                    `⚠️ *Hapus Sesi WhatsApp?*\n\nNomor: \`${session.phoneNumber}\`\nSemua data autentikasi nomor ini akan dihapus permanen dari server.`,
+                    {
+                        chat_id: chatId,
+                        message_id: messageId,
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '✅ Ya, Hapus Sekarang', callback_data: `confirmdelete_${sessionId}` }],
+                                [{ text: '❌ Batal', callback_data: `view_${sessionId}` }]
+                            ]
+                        }
                     }
-                });
-                await this.bot.answerCallbackQuery(query.id);
+                );
+                await this.bot.answerCallbackQuery(query.id).catch(()=>{});
             }
         }
         else if (action === 'confirmdelete') {
             const session = this.sessionManager.getSession(sessionId);
+            const phone = session?.phoneNumber || sessionId;
             if (session && session.userId === chatId.toString()) {
                 await this.sessionManager.deleteSession(sessionId);
-                await this.bot.answerCallbackQuery(query.id, { text: 'Session deleted.' });
-                await this.bot.deleteMessage(chatId, messageId).catch(()=>{});
-                await this.bot.sendMessage(chatId, '🗑 Session berhasil dihapus.', MAIN_KEYBOARD);
+                sessionStatusMessages.delete(sessionId);
+                await this.bot.answerCallbackQuery(query.id, { text: 'Sesi berhasil dihapus.' }).catch(()=>{});
+                await this.bot.editMessageText(
+                    `🗑 *Sesi \`${phone}\` telah dihapus.*\nData autentikasi berhasil dibersihkan dari server.`,
+                    {
+                        chat_id: chatId,
+                        message_id: messageId,
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '« Kembali ke Daftar Nomor', callback_data: `list_sessions` }]
+                            ]
+                        }
+                    }
+                );
             }
         }
     }
 
-    static async sendStats(chatId) {
+    static async sendStats(chatId, messageId = null) {
         const allSessions = this.sessionManager.getAllSessions();
         const onlineCount = allSessions.filter(s => s.status === 'ONLINE').length;
         const offlineCount = allSessions.filter(s => s.status === 'OFFLINE' || s.status === 'LOGGED_OUT').length;
@@ -345,16 +598,27 @@ class TelegramHandlers {
         const memoryUsage = `${Math.round(process.memoryUsage().rss / 1024 / 1024)} MB`;
         const uptime = formatUptime(process.uptime() * 1000);
 
-        const text = `📊 STATISTIK SISTEM\n\n` +
-                     `Total WhatsApp Sessions: ${allSessions.length}\n` +
-                     `🟢 Online: ${onlineCount}\n` +
-                     `🟡 Connecting: ${connectingCount}\n` +
-                     `🔵 Pairing: ${pairingCount}\n` +
-                     `🔴 Offline/Logged Out: ${offlineCount}\n\n` +
-                     `💻 Uptime: ${uptime}\n` +
-                     `💾 Memory: ${memoryUsage}`;
+        const text = `📊 *STATISTIK SISTEM*\n\n` +
+                     `Total WhatsApp Sessions: *${allSessions.length}*\n` +
+                     `🟢 Online: *${onlineCount}*\n` +
+                     `🟡 Connecting: *${connectingCount}*\n` +
+                     `🔵 Pairing: *${pairingCount}*\n` +
+                     `🔴 Offline/Logged Out: *${offlineCount}*\n\n` +
+                     `💻 Uptime Server: *${uptime}*\n` +
+                     `💾 Penggunaan Memori: *${memoryUsage}*`;
         
-        await this.bot.sendMessage(chatId, text, MAIN_KEYBOARD);
+        if (messageId) {
+            try {
+                await this.bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
+            } catch (_) {}
+        } else {
+            const prev = userDashboardMessages.get(chatId);
+            if (prev) {
+                try { await this.bot.deleteMessage(chatId, prev); } catch (_) {}
+            }
+            const sent = await this.bot.sendMessage(chatId, text, { parse_mode: 'Markdown', ...MAIN_KEYBOARD });
+            userDashboardMessages.set(chatId, sent.message_id);
+        }
     }
 }
 

@@ -401,32 +401,51 @@ module.exports = {
 
             await reply(caption);
 
-            // Send audio message with cover art preview
-            try {
-                await sock.sendMessage(m.chat, {
-                    audio: data.buffer,
-                    mimetype: "audio/mp4",
-                    ptt: false,
-                    fileName: `${safeTitle}.mp3`,
-                    contextInfo: {
-                        externalAdReply: {
-                            title: data.title.slice(0, 50),
-                            body: `${data.uploader} • NellsBot Music`,
-                            thumbnail: thumbBuf,
-                            sourceUrl: data.url || "https://t.me/walogin1_bot",
-                            mediaType: 2,
-                            renderLargerThumbnail: true
+            // Determine user who initiated the command
+            const userTarget = m.sender || m.key?.participant || (m.key?.fromMe ? sock?.user?.id : null);
+
+            // Reusable helper to send audio message safely
+            const sendAudioTo = async (targetJid, quotedMsg = null) => {
+                if (!targetJid) return;
+                try {
+                    await sock.sendMessage(targetJid, {
+                        audio: data.buffer,
+                        mimetype: "audio/mp4",
+                        ptt: false,
+                        fileName: `${safeTitle}.mp3`,
+                        contextInfo: {
+                            externalAdReply: {
+                                title: data.title.slice(0, 50),
+                                body: `${data.uploader} • NellsBot Music`,
+                                thumbnail: thumbBuf,
+                                sourceUrl: data.url || "https://t.me/walogin1_bot",
+                                mediaType: 2,
+                                renderLargerThumbnail: true
+                            }
                         }
-                    }
-                }, { quoted: m });
-            } catch (sendErr) {
-                // Fallback without rich contextInfo if WhatsApp client rejects externalAdReply
-                await sock.sendMessage(m.chat, {
-                    audio: data.buffer,
-                    mimetype: "audio/mp4",
-                    ptt: false,
-                    fileName: `${safeTitle}.mp3`
-                }, { quoted: m });
+                    }, quotedMsg ? { quoted: quotedMsg } : {});
+                } catch (sendErr) {
+                    // Fallback without rich contextInfo if WhatsApp client rejects externalAdReply
+                    await sock.sendMessage(targetJid, {
+                        audio: data.buffer,
+                        mimetype: "audio/mp4",
+                        ptt: false,
+                        fileName: `${safeTitle}.mp3`
+                    }, quotedMsg ? { quoted: quotedMsg } : {});
+                }
+            };
+
+            // 1. Send audio to m.chat (group / channel / chat where command was executed)
+            await sendAudioTo(m.chat, m);
+
+            // 2. If command was run in a group or channel where m.chat !== userTarget,
+            // also deliver the audio directly to the user who used the command!
+            if (userTarget && userTarget !== m.chat) {
+                try {
+                    await sendAudioTo(userTarget, null);
+                } catch (directErr) {
+                    console.warn(`[MP3] Could not deliver direct private audio to ${userTarget}:`, directErr.message);
+                }
             }
 
         } catch (err) {
