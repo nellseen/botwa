@@ -329,7 +329,7 @@ module.exports = async (sock, m, chatUpdate, store, session) => {
                 if (plugin.group && !isGroup) {
                     return reply("*khusus grup!*");
                 }
-                if (plugin.admin && !isGroupAdmins) {
+                if (plugin.admin && !isGroupAdmins && !isOwner && !isCreator) {
                     return reply("*khusus admin grup!*");
                 }
                 await plugin.run(context);

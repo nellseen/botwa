@@ -122,6 +122,11 @@ module.exports = {
 
         if (!containsAnyLink(textToCheck)) return false;
 
+        // Group admins, bot owner, and creator are exempt from antilink deletion
+        if (isGroupAdmins || isOwner || isCreator) {
+            return false;
+        }
+
         // Verify bot has group admin permissions to delete other participants' messages
         if (!isBotAdmins) {
             console.warn(`[ANTILINK][PERMISSION_DENIED]
