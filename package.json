@@ -1,1 +1,63 @@
-{"name":"NellsBotBase","version":"1.0.0","description":"base bot WhatsApp simple using @itsliaaa/baileys","main":"index.js","type":"commonjs","scripts":{"dev":"node ./index.js","start":"node ./index.js","build":"echo \u0027No build needed\u0027"},"keywords":["library","baileys","NellsBotBase","itsliaaa","whatsapp-bot"],"author":"NellsBotBase","license":"MIT","dependencies":{"@adiwajshing/keyed-db":"^0.2.4","@colors/colors":"^1.5.0","@ffmpeg-installer/ffmpeg":"^1.1.0","@hapi/boom":"^10.0.1","@itsliaaa/baileys":"^0.3.18","@upstash/redis":"^1.34.4","awesome-phonenumber":"^6.4.0","axios":"^0.27.2","chalk":"^4.1.2","dotenv":"^17.4.2","express":"^5.2.1","fflate":"^0.8.2","file-type":"^19.0.0","fluent-ffmpeg":"^2.1.3","fs":"0.0.1-security","human-readable":"^0.2.1","jimp":"^1.6.1","moment-timezone":"^0.5.34","node-fetch":"^2.6.1","node-telegram-bot-api":"^0.66.0","pino":"^8.17.2","readline":"^1.3.0","sharp":"^0.34.1","util":"^0.12.4","uuid":"^14.0.2","youtubei.js":"^18.0.0","yt-search":"^2.13.1"}}
+{
+  "name": "NellsBotBase",
+  "version": "1.0.0",
+  "description": "base bot WhatsApp simple using @itsliaaa/baileys",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "node ./index.js",
+    "start": "node ./index.js",
+    "build": "echo 'Build OK'",
+    "lint": "npx eslint index.js control/ core/ lib/ plugins/ telegram/ --quiet",
+    "test:static": "npx eslint index.js control/ core/ lib/ plugins/ telegram/ --quiet",
+    "test:unit": "NODE_ENV=test node --test tests/unit/*.test.js",
+    "test:integration": "NODE_ENV=test node --test tests/integration/*.test.js",
+    "test:e2e": "NODE_ENV=test node --test tests/e2e/*.test.js",
+    "test:load": "NODE_ENV=test node --test tests/load/*.test.js",
+    "test": "node scripts/run-all-tests.js",
+    "reset:sessions": "node scripts/reset-sessions.js",
+    "pack": "node scripts/pack-release.js"
+  },
+  "keywords": [
+    "library",
+    "baileys",
+    "NellsBotBase",
+    "itsliaaa",
+    "whatsapp-bot"
+  ],
+  "author": "NellsBotBase",
+  "license": "MIT",
+  "dependencies": {
+    "@adiwajshing/keyed-db": "^0.2.4",
+    "@colors/colors": "^1.5.0",
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@hapi/boom": "^10.0.1",
+    "@itsliaaa/baileys": "^0.3.18",
+    "@upstash/redis": "^1.34.4",
+    "awesome-phonenumber": "^6.4.0",
+    "axios": "^0.27.2",
+    "chalk": "^4.1.2",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "fflate": "^0.8.2",
+    "file-type": "^19.0.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "human-readable": "^0.2.1",
+    "jimp": "^1.6.1",
+    "moment-timezone": "^0.5.34",
+    "node-fetch": "^2.6.1",
+    "node-telegram-bot-api": "^0.66.0",
+    "pino": "^8.17.2",
+    "readline": "^1.3.0",
+    "sharp": "^0.34.1",
+    "util": "^0.12.4",
+    "uuid": "^14.0.2",
+    "youtubei.js": "^18.0.0",
+    "yt-search": "^2.13.1"
+  },
+  "devDependencies": {
+    "autocannon": "^7.15.0",
+    "eslint": "^8.57.0",
+    "jsdom": "^24.0.0"
+  }
+}

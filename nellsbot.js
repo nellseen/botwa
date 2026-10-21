@@ -340,10 +340,12 @@ module.exports = async (sock, m, chatUpdate, store, session) => {
     }
 };
 
-let file = require.resolve(__filename);
-fs.watchFile(file, () => {
-    fs.unwatchFile(file);
-    console.log('\x1b[0;32m' + __filename + ' \x1b[1;32mupdated!\x1b[0m');
-    delete require.cache[file];
-    require(file);
-});
+if (process.env.NODE_ENV !== 'test') {
+    const file = require.resolve(__filename);
+    fs.watchFile(file, { interval: 5000 }, () => {
+        fs.unwatchFile(file);
+        console.log('\x1b[0;32m' + __filename + ' \x1b[1;32mupdated!\x1b[0m');
+        delete require.cache[file];
+        require(file);
+    });
+}

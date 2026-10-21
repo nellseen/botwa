@@ -27,7 +27,7 @@ module.exports = {
             if (premium.includes(target)) return reply(`*${target} sudah premium*`);
 
             premium.push(target);
-            writeList(premPath, [...premium, target]);
+            writeList(premPath, premium);
             return reply(`*✅ ${target} TELAH MENJADI PREMIUM*`);
         }
 

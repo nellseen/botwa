@@ -27,7 +27,7 @@ module.exports = {
             if (ownerbot.includes(target)) return reply(`*${target} sudah jadi owner*`);
 
             ownerbot.push(target);
-            writeList(ownerPath, [...ownerbot, target]);
+            writeList(ownerPath, ownerbot);
             return reply(`*✅ ${target} TELAH MENJADI OWNER*`);
         }
 

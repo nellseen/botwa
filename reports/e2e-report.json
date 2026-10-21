@@ -1,0 +1,13 @@
+{
+  "test": "E2E Dashboard & WhatsApp Session Lifecycle",
+  "timestamp": "2026-10-21T09:57:09.622Z",
+  "status": "PASSED",
+  "steps": [
+    "1. Loaded http://127.0.0.1:3088/ and verified page structure",
+    "2. Form interaction: entered phone number 628881234567",
+    "3. Submitted create session form to /api/sessions/create",
+    "4. Verified pairing code generated and updated in DOM",
+    "5. Checked session listed in /api/sessions",
+    "6. Disconnected and deleted session cleanly"
+  ]
+}

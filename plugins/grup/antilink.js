@@ -212,5 +212,6 @@ error: ${deleteError.message}`);
             `> Status : *${action === "on" ? "AKTIF (ON)" : "NONAKTIF (OFF)"}*`,
             `> Tindakan : *Semua format link (http, https, www, domain, shortlink) ${action === "on" ? "akan langsung dihapus seketika" : "dibiarkan"}*`
         ]);
-    }
+    },
+    containsAnyLink
 };

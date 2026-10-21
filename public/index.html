@@ -369,6 +369,108 @@
           </div>
         </div>
 
+        <!-- LIVE MANAGEMENT DASHBOARD & REALTIME API -->
+        <div id="live-dashboard" class="mt-14 max-w-4xl mx-auto">
+          <div class="rounded-3xl bg-[#0D121F] p-6 sm:p-8 border border-slate-800 shadow-2xl relative">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-800">
+              <div>
+                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-xs font-bold text-emerald-400 mb-2">
+                  <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span>LIVE CONTROLLER & REALTIME API</span>
+                </div>
+                <h2 class="font-display font-extrabold text-2xl text-white">Kelola Sesi WhatsApp dari Web</h2>
+                <p class="text-xs sm:text-sm text-slate-400 mt-1">Data sinkron dengan Baileys Multi-Session & Bot Telegram.</p>
+              </div>
+              <div>
+                <button id="btn-refresh-dashboard" type="button" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 flex items-center gap-2 transition-all">
+                  <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                  <span>Refresh Data</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Live Status Stats Cards -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 my-6">
+              <div class="bg-slate-950/60 p-4 rounded-xl border border-slate-800/80">
+                <span class="text-[11px] font-medium text-slate-400 block">Total Sesi</span>
+                <span id="metric-total-sessions" class="text-2xl font-black text-white mt-1 block">0</span>
+              </div>
+              <div class="bg-slate-950/60 p-4 rounded-xl border border-slate-800/80">
+                <span class="text-[11px] font-medium text-slate-400 block">Nomor Online</span>
+                <span id="metric-online-sessions" class="text-2xl font-black text-emerald-400 mt-1 block">0</span>
+              </div>
+              <div class="bg-slate-950/60 p-4 rounded-xl border border-slate-800/80">
+                <span class="text-[11px] font-medium text-slate-400 block">Server Uptime</span>
+                <span id="metric-uptime" class="text-2xl font-black text-amber-300 mt-1 block">0s</span>
+              </div>
+              <div class="bg-slate-950/60 p-4 rounded-xl border border-slate-800/80">
+                <span class="text-[11px] font-medium text-slate-400 block">Memory RSS</span>
+                <span id="metric-memory" class="text-2xl font-black text-slate-200 mt-1 block">0 MB</span>
+              </div>
+            </div>
+
+            <!-- Add Number & Instant Pairing Code Form -->
+            <div class="bg-[#111726] p-5 sm:p-6 rounded-2xl border border-slate-800 mb-6">
+              <h3 class="text-sm font-bold text-white mb-1 flex items-center gap-2">
+                <span class="text-emerald-400">➕</span> Tautkan Nomor WhatsApp Baru (Pairing Code Instan)
+              </h3>
+              <p class="text-xs text-slate-400 mb-4">Masukkan nomor WhatsApp (contoh: <code class="text-amber-300">62895400835519</code>). Pairing code 8-digit akan langsung digenerate tanpa scan QR.</p>
+              
+              <form id="form-create-session" class="flex flex-col sm:flex-row gap-3">
+                <input 
+                  type="text" 
+                  id="input-phone-number" 
+                  placeholder="Contoh: 62895400835519" 
+                  class="flex-1 bg-slate-950 border border-slate-700/80 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
+                  required
+                />
+                <button 
+                  type="submit" 
+                  id="btn-create-session"
+                  class="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-sm tracking-wide shadow-lg shadow-emerald-950 flex items-center justify-center gap-2 transition-all active:scale-95"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                  <span>Generate Pairing Code</span>
+                </button>
+              </form>
+
+              <!-- Pairing Code Result Display -->
+              <div id="pairing-code-result" class="hidden mt-4 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping"></span>
+                    <span class="text-xs font-bold text-amber-300 uppercase">Pairing Code WhatsApp:</span>
+                  </div>
+                  <span id="pairing-code-phone" class="text-[11px] text-amber-200/90 font-mono"></span>
+                </div>
+                <div class="text-center my-3">
+                  <span id="display-pairing-code" class="font-mono text-3xl sm:text-4xl font-black text-amber-300 tracking-widest bg-black/60 px-6 py-2 rounded-xl border border-amber-400/30 inline-block select-all">----</span>
+                </div>
+                <p class="text-xs text-slate-300 text-center leading-relaxed">
+                  👉 Buka WhatsApp HP &gt; <strong>Perangkat Tertaut</strong> &gt; <strong>Tautkan Perangkat</strong> &gt; <strong>Tautkan dengan nomor telepon saja</strong> &gt; masukkan kode 8 digit di atas.
+                </p>
+              </div>
+            </div>
+
+            <!-- Active Sessions List -->
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                  <span>📱</span> Daftar Sesi WhatsApp Terdaftar
+                </h3>
+                <span id="sessions-badge-count" class="text-[11px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full font-medium">0 Sesi</span>
+              </div>
+
+              <div id="sessions-list-container" class="space-y-3">
+                <div class="text-center py-6 text-slate-500 text-xs bg-slate-950/40 rounded-xl border border-slate-800/60">
+                  Memuat daftar sesi...
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
       </div>
     </section>
 
@@ -651,7 +753,7 @@
   </footer>
 
   <script>
-    // Ensure smooth scrolling for internal anchors and avoid hash jumping / reload feeling
+    // Smooth scrolling for internal anchors
     document.querySelectorAll('a[href^="#"]').forEach(anchor => {
       anchor.addEventListener('click', function (e) {
         const targetId = this.getAttribute('href').slice(1);
@@ -666,6 +768,236 @@
         }
       });
     });
+
+    // Helper: format seconds to human uptime
+    function formatUptimeSec(seconds) {
+      const s = Math.floor(seconds || 0);
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const sec = s % 60;
+      if (h > 0) return `${h}j ${m}m ${sec}s`;
+      if (m > 0) return `${m}m ${sec}s`;
+      return `${sec}s`;
+    }
+
+    // Helper: status badge rendering
+    function renderStatusBadge(status) {
+      if (status === 'ONLINE') {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> ONLINE
+        </span>`;
+      } else if (status === 'PAIRING') {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-500/10 text-blue-400 border border-blue-500/30">
+          <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping"></span> PAIRING
+        </span>`;
+      } else if (status === 'CONNECTING' || status === 'RECONNECTING') {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30">
+          <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span> ${status}
+        </span>`;
+      } else {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-800 text-slate-400 border border-slate-700">
+          <span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span> ${status}
+        </span>`;
+      }
+    }
+
+    // Load System Status
+    async function loadStatus() {
+      try {
+        const res = await fetch('/api/status');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        // Update header indicator
+        const headerIndicator = document.getElementById('header-status-indicator');
+        if (headerIndicator) {
+          const isOnline = data.status === 'ONLINE';
+          headerIndicator.innerHTML = `
+            <span class="relative flex h-2.5 w-2.5">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-red-400'} opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2.5 w-2.5 ${isOnline ? 'bg-emerald-500' : 'bg-red-500'}"></span>
+            </span>
+            <span>Server: <strong class="${isOnline ? 'text-emerald-400' : 'text-red-400'} font-medium">${data.status} (${data.version})</strong></span>
+          `;
+        }
+
+        // Update dashboard metrics
+        if (document.getElementById('metric-total-sessions')) {
+          document.getElementById('metric-total-sessions').textContent = data.sessions?.total ?? 0;
+        }
+        if (document.getElementById('metric-online-sessions')) {
+          document.getElementById('metric-online-sessions').textContent = data.sessions?.online ?? 0;
+        }
+        if (document.getElementById('metric-uptime')) {
+          document.getElementById('metric-uptime').textContent = formatUptimeSec(data.system?.uptime);
+        }
+        if (document.getElementById('metric-memory')) {
+          document.getElementById('metric-memory').textContent = data.system?.memory || '0 MB';
+        }
+      } catch (err) {
+        console.warn('Failed loading /api/status:', err);
+      }
+    }
+
+    // Load Sessions
+    async function loadSessions() {
+      const container = document.getElementById('sessions-list-container');
+      const badge = document.getElementById('sessions-badge-count');
+      if (!container) return;
+
+      try {
+        const res = await fetch('/api/sessions');
+        if (!res.ok) throw new Error('API Error');
+        const data = await res.json();
+        const sessions = data.sessions || [];
+
+        if (badge) badge.textContent = `${sessions.length} Sesi`;
+
+        if (sessions.length === 0) {
+          container.innerHTML = `
+            <div class="text-center py-8 text-slate-400 text-xs bg-slate-950/40 rounded-xl border border-slate-800/60 p-6">
+              <p class="font-semibold text-slate-300 mb-1">Belum ada nomor WhatsApp yang terdaftar.</p>
+              <p>Gunakan form di atas atau kirim nomor Anda ke bot Telegram untuk membuat sesi baru.</p>
+            </div>
+          `;
+          return;
+        }
+
+        container.innerHTML = sessions.map(sess => {
+          const phone = sess.phoneNumber || 'Belum diatur';
+          return `
+            <div id="session-card-${sess.sessionId}" class="p-4 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-slate-700/80 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="font-mono font-bold text-white text-sm">${phone}</span>
+                  ${renderStatusBadge(sess.status)}
+                </div>
+                <div class="text-[11px] text-slate-400 font-mono">
+                  <span>ID: ${sess.sessionId}</span>
+                  ${sess.pairingCode ? `<span class="ml-2 text-amber-300 font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-400/20">Code: ${sess.pairingCode}</span>` : ''}
+                </div>
+              </div>
+              <div class="flex items-center gap-2 flex-wrap">
+                ${sess.status === 'ONLINE' ? `
+                  <button onclick="handleSessionAction('${sess.sessionId}', 'disconnect')" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition-colors">Putuskan</button>
+                ` : `
+                  <button onclick="handleSessionAction('${sess.sessionId}', 'connect')" class="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold transition-colors">Sambungkan</button>
+                  <button onclick="handleSessionAction('${sess.sessionId}', 'pair')" class="px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-xs font-semibold transition-colors">Pairing Code</button>
+                `}
+                <button onclick="handleSessionAction('${sess.sessionId}', 'reset')" class="px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20 text-xs font-medium transition-colors" title="Reset autentikasi dan pairing ulang">Reset</button>
+                <button onclick="handleSessionAction('${sess.sessionId}', 'delete')" class="px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-medium transition-colors">Hapus</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+      } catch (err) {
+        container.innerHTML = `<div class="text-center py-4 text-red-400 text-xs">Gagal memuat sesi: ${err.message}</div>`;
+      }
+    }
+
+    // Action handler for sessions
+    window.handleSessionAction = async function(sessionId, action) {
+      try {
+        let endpoint = '';
+        let method = 'POST';
+
+        if (action === 'disconnect') endpoint = `/api/sessions/${sessionId}/disconnect`;
+        else if (action === 'connect') endpoint = `/api/sessions/${sessionId}/connect`;
+        else if (action === 'pair') endpoint = `/api/sessions/${sessionId}/pair`;
+        else if (action === 'reset') endpoint = `/api/sessions/${sessionId}/reset`;
+        else if (action === 'delete') {
+          if (!confirm('Yakin ingin menghapus sesi nomor ini?')) return;
+          endpoint = `/api/sessions/${sessionId}`;
+          method = 'DELETE';
+        }
+
+        const res = await fetch(endpoint, { method });
+        const data = await res.json();
+
+        if (data.pairingCode) {
+          const display = document.getElementById('display-pairing-code');
+          const box = document.getElementById('pairing-code-result');
+          const phoneLabel = document.getElementById('pairing-code-phone');
+          if (display && box) {
+            display.textContent = data.pairingCode;
+            if (phoneLabel) phoneLabel.textContent = data.phoneNumber || sessionId;
+            box.classList.remove('hidden');
+          }
+        }
+
+        await loadSessions();
+        await loadStatus();
+      } catch (err) {
+        alert('Gagal melakukan aksi: ' + err.message);
+      }
+    };
+
+    // Form create session submit
+    const createForm = document.getElementById('form-create-session');
+    if (createForm) {
+      createForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const input = document.getElementById('input-phone-number');
+        const submitBtn = document.getElementById('btn-create-session');
+        const phone = (input?.value || '').trim();
+
+        if (!phone) return;
+
+        submitBtn.disabled = true;
+        const originalText = submitBtn.innerHTML;
+        submitBtn.innerHTML = `<span>Menghubungkan...</span>`;
+
+        try {
+          const res = await fetch('/api/sessions/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: 'web_dashboard', phoneNumber: phone })
+          });
+          const data = await res.json();
+
+          if (!res.ok || !data.success) {
+            alert(data.error || 'Gagal membuat sesi');
+            return;
+          }
+
+          if (data.pairingCode) {
+            const display = document.getElementById('display-pairing-code');
+            const box = document.getElementById('pairing-code-result');
+            const phoneLabel = document.getElementById('pairing-code-phone');
+            if (display && box) {
+              display.textContent = data.pairingCode;
+              if (phoneLabel) phoneLabel.textContent = data.phoneNumber;
+              box.classList.remove('hidden');
+            }
+          }
+
+          input.value = '';
+          await loadSessions();
+          await loadStatus();
+        } catch (err) {
+          alert('Error: ' + err.message);
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = originalText;
+        }
+      });
+    }
+
+    // Refresh button
+    const refreshBtn = document.getElementById('btn-refresh-dashboard');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', () => {
+        loadStatus();
+        loadSessions();
+      });
+    }
+
+    // Initial load and periodic polling every 6 seconds
+    loadStatus();
+    loadSessions();
+    setInterval(loadStatus, 6000);
+    setInterval(loadSessions, 6000);
   </script>
 
 </body>

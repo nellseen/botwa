@@ -1,0 +1,24 @@
+{
+  "endpoint": "/api/status",
+  "timestamp": "2026-10-21T09:57:15.398Z",
+  "durationSeconds": 4.01,
+  "connections": 10,
+  "metrics": {
+    "totalRequests": 6102,
+    "requestsPerSecond": 1525.5,
+    "latency": {
+      "p50": 5,
+      "p90": 8,
+      "p95": 13,
+      "p99": 16,
+      "max": 64,
+      "mean": 6.04
+    },
+    "throughputBytesPerSec": 1034304,
+    "errorCount": 0,
+    "non2xxCount": 0,
+    "memoryBeforeMb": 196,
+    "memoryAfterMb": 283
+  },
+  "status": "PASSED"
+}

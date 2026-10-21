@@ -1,0 +1,32 @@
+{
+  "env": {
+    "node": true,
+    "es2022": true,
+    "commonjs": true
+  },
+  "parserOptions": {
+    "ecmaVersion": "latest"
+  },
+  "rules": {
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "no-undef": "error",
+    "no-constant-condition": "warn",
+    "no-empty": "warn"
+  },
+  "globals": {
+    "global": "readonly",
+    "process": "readonly",
+    "Buffer": "readonly",
+    "__dirname": "readonly",
+    "__filename": "readonly"
+  },
+  "ignorePatterns": [
+    "node_modules/",
+    "public/",
+    "logs/",
+    "data/",
+    "debug/",
+    "tmp/",
+    "bin/"
+  ]
+}

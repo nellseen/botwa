@@ -3,7 +3,6 @@
 //  Loads from .env / process.env with robust defaults
 // ===================================================
 
-const fs = require('fs');
 require('dotenv').config();
 
 // Parse owner numbers from environment (comma-separated or single)
