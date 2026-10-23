@@ -6,7 +6,9 @@
   "type": "commonjs",
   "scripts": {
     "dev": "node ./index.js",
+    "prestart": "npm run update:baileys",
     "start": "node ./index.js",
+    "update:baileys": "npm install @itsliaaa/baileys@github:itsliaaa/baileys",
     "build": "echo 'Build OK'",
     "lint": "npx eslint index.js control/ core/ lib/ plugins/ telegram/ --quiet",
     "test:static": "npx eslint index.js control/ core/ lib/ plugins/ telegram/ --quiet",
@@ -32,7 +34,7 @@
     "@colors/colors": "^1.5.0",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@hapi/boom": "^10.0.1",
-    "@itsliaaa/baileys": "^0.3.18",
+    "@itsliaaa/baileys": "github:itsliaaa/baileys",
     "@upstash/redis": "^1.34.4",
     "awesome-phonenumber": "^6.4.0",
     "axios": "^0.27.2",
