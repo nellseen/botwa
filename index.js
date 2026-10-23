@@ -276,18 +276,46 @@ app.get('/api/logs', (req, res) => {
 
 // Message Simulation endpoint for automated testing of MessageRouter and plugins
 app.post('/api/simulate-message', async (req, res) => {
+    // 1. Nonaktifkan endpoint simulasi di production secara default
+    const isProduction = process.env.NODE_ENV === 'production';
+    const isSimulationEnabled = process.env.ENABLE_SIMULATION === 'true';
+    if (isProduction && !isSimulationEnabled) {
+        return res.status(403).json({
+            success: false,
+            error: 'Forbidden: Endpoint simulasi dinonaktifkan di environment production secara default.'
+        });
+    }
+
+    // 2. Autentikasi wajib untuk endpoint simulasi
+    const configuredKey = process.env.SIMULATION_API_KEY || (process.env.NODE_ENV === 'test' ? 'test-simulation-secret' : null);
+    const authHeader = req.headers['authorization'] || req.headers['x-api-key'];
+    const token = authHeader
+        ? (authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : authHeader.trim())
+        : null;
+
+    if (!configuredKey || !token || token !== configuredKey) {
+        return res.status(401).json({
+            success: false,
+            error: 'Unauthorized: Autentikasi valid diperlukan untuk mengakses endpoint simulasi.'
+        });
+    }
+
+    // 3. Sanitasi input: Jangan pernah mempercayai sender, isCreator, atau fromMe yang diberikan klien
     const {
         sender = '6281234567890@s.whatsapp.net',
         chat = '6281234567890@s.whatsapp.net',
         text = '/menu',
-        fromMe = false,
         isGroup = false
-    } = req.body;
+    } = req.body || {};
+
+    const cleanSender = String(sender || '').trim() || '6281234567890@s.whatsapp.net';
+    const cleanText = typeof text === 'string' ? text : '';
 
     const replies = [];
     const mockSock = {
-        user: { id: '62895400835519:1@s.whatsapp.net' },
+        user: { id: '62800000000000:1@s.whatsapp.net' },
         public: true,
+        isSimulation: true,
         decodeJid: (jid) => jid ? jid.replace(/:\d+@/g, '@') : jid,
         sendMessage: async (target, content, options = {}) => {
             replies.push({ target, content, options });
@@ -300,7 +328,7 @@ app.post('/api/simulate-message', async (req, res) => {
         groupMetadata: async () => ({
             id: chat,
             subject: 'Test Group',
-            participants: [{ id: sender, admin: 'admin' }]
+            participants: [{ id: cleanSender, admin: null }]
         }),
         signalRepository: {
             lidMapping: {
@@ -312,33 +340,37 @@ app.post('/api/simulate-message', async (req, res) => {
     const mockMessage = {
         key: {
             remoteJid: chat,
-            fromMe,
+            fromMe: false, // Jangan pernah percaya fromMe dari klien
             id: 'SIM_MSG_' + Date.now(),
-            participant: isGroup ? sender : undefined
+            participant: isGroup ? cleanSender : undefined
         },
         message: {
-            conversation: text
+            conversation: cleanText
         },
         mtype: 'conversation',
-        text,
-        sender,
-        chat
+        text: cleanText,
+        sender: cleanSender,
+        chat,
+        isSimulation: true // Penanda tegas isolasi simulasi
     };
 
     const mockSession = {
         sessionId: 'simulated_session',
         userId: 'simulation_user',
-        phoneNumber: '62895400835519',
-        status: 'ONLINE'
+        phoneNumber: '62800000000000',
+        status: 'ONLINE',
+        isSimulation: true
     };
 
     try {
-        await MessageRouter.handleMessage(mockSession, mockSock, mockMessage, null);
+        // Pisahkan ke jalur testing/simulasi terisolasi
+        const result = await MessageRouter.handleSimulatedMessage(mockSession, mockSock, mockMessage, null);
         res.json({
             success: true,
-            simulatedInput: { sender, chat, text },
+            simulatedInput: { sender: cleanSender, chat, text: cleanText },
             repliesCount: replies.length,
-            replies
+            replies,
+            result
         });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });

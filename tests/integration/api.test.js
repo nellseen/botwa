@@ -18,7 +18,11 @@ describe('Integration Test: Express API Endpoints', () => {
 
     async function req(url, options = {}) {
         const res = await fetch(`${baseUrl}${url}`, {
-            headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': process.env.SIMULATION_API_KEY || 'test-simulation-secret',
+                ...(options.headers || {})
+            },
             ...options
         });
         const json = await res.json().catch(() => null);

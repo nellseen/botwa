@@ -143,9 +143,10 @@ module.exports = async (sock, m, chatUpdate, store, session) => {
 
         const ownerbot = JSON.parse(fs.readFileSync(OWNER_PATH));
         const sameAccessJid = value => normalizeAccessJid(value) === accessSender;
-        const isPremium = premium.some(sameAccessJid);
-        const isOwner = ownerbot.some(sameAccessJid);
-        const isCreator = [botNumber, ...global.owner].some(sameAccessJid);
+        const isSimulation = Boolean(m?.isSimulation || sock?.isSimulation || session?.isSimulation);
+        const isPremium = isSimulation ? false : premium.some(sameAccessJid);
+        const isOwner = isSimulation ? false : ownerbot.some(sameAccessJid);
+        const isCreator = isSimulation ? false : [botNumber, ...global.owner].some(sameAccessJid);
         const bodyTrim = (body || '').trim();
         const prefixMatch = bodyTrim.startsWith(prefix) ? prefix : null;
         let command = '';
@@ -278,6 +279,7 @@ module.exports = async (sock, m, chatUpdate, store, session) => {
             isOwner,
             isCreator,
             isPremium,
+            isSimulation,
             logger,
             reply,
             thumb,
@@ -320,6 +322,9 @@ module.exports = async (sock, m, chatUpdate, store, session) => {
         if (command) {
             const plugin = plugins.findPlugin(command);
             if (plugin && typeof plugin.run === 'function') {
+                if (isSimulation && (plugin.category === 'owner' || plugin.owner === true || plugin.name === 'exec')) {
+                    return reply("*Akses ditolak: Plugin owner dilarang dalam mode simulasi!*");
+                }
                 if (plugin.premium && !isPremium && !isCreator && !isOwner) {
                     return reply("*Fitur ini khusus user premium dan owner!*");
                 }

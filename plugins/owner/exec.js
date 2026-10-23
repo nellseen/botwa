@@ -10,10 +10,20 @@ const { exec } = require('child_process');
 module.exports = {
     name: "exec",
     category: "owner",
+    owner: true,
     description: "Evaluasi kode JavaScript (=>) & eksekusi shell ($)",
     menu: ["=> <kode>", "$ <perintah>"],
     before: async (context) => {
-        const { budy, isCreator, reply, q } = context;
+        const { budy, isCreator, reply, q, isSimulation, sock, m, session } = context;
+
+        // Strictly reject code evaluation and shell execution in simulation / testing contexts
+        if (isSimulation || sock?.isSimulation || m?.isSimulation || session?.isSimulation) {
+            if (budy && (budy.startsWith('=>') || budy.startsWith('$'))) {
+                reply("*Akses ditolak: Operasi evaluasi/shell exec dilarang dalam mode simulasi.*");
+                return true;
+            }
+            return false;
+        }
 
         if (budy.startsWith('=>')) {
             if (!isCreator) return reply("*khusus owner*");

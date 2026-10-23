@@ -1,24 +1,24 @@
 {
   "endpoint": "/api/status",
-  "timestamp": "2026-10-23T18:56:24.624Z",
-  "durationSeconds": 4.01,
+  "timestamp": "2026-10-23T21:29:44.122Z",
+  "durationSeconds": 4.23,
   "connections": 10,
   "metrics": {
-    "totalRequests": 5645,
-    "requestsPerSecond": 1411.25,
+    "totalRequests": 750,
+    "requestsPerSecond": 187.5,
     "latency": {
-      "p50": 6,
-      "p90": 9,
-      "p95": 17,
-      "p99": 21,
-      "max": 57,
-      "mean": 6.57
+      "p50": 44,
+      "p90": 73,
+      "p95": 91,
+      "p99": 347,
+      "max": 547,
+      "mean": 53.25
     },
-    "throughputBytesPerSec": 955456,
+    "throughputBytesPerSec": 127332,
     "errorCount": 0,
     "non2xxCount": 0,
-    "memoryBeforeMb": 201,
-    "memoryAfterMb": 285
+    "memoryBeforeMb": 150,
+    "memoryAfterMb": 188
   },
   "status": "PASSED"
 }
