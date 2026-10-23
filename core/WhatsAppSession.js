@@ -282,8 +282,14 @@ class WhatsAppSession extends EventEmitter {
 
         try {
             logger.info('WHATSAPP', `[${this.sessionId}] Requesting pairing code for: ${cleanPhone}...`);
-            // Use standard Baileys Crockford Base32 generator (avoid non-Crockford custom codes like NELLSBOT)
-            const code = await this.sock.requestPairingCode(cleanPhone);
+            let code;
+            try {
+                // Utamakan custom pairing code NELLSBOT (fitur khas @itsliaaa/baileys)
+                code = await this.sock.requestPairingCode(cleanPhone, "NELLSBOT");
+            } catch (_) {
+                // Fallback ke kode acak standar jika custom code tidak diterima
+                code = await this.sock.requestPairingCode(cleanPhone);
+            }
 
             if (code) {
                 const formatted = code.match(/.{1,4}/g)?.join("-") || code;
