@@ -11,7 +11,8 @@ const {
     fetchLatestBaileysVersion,
     makeInMemoryStore,
     jidDecode,
-    makeCacheableSignalKeyStore
+    makeCacheableSignalKeyStore,
+    Browsers
 } = require("@itsliaaa/baileys");
 const pino = require('pino');
 const EventEmitter = require('events');
@@ -19,8 +20,8 @@ const fs = require('fs');
 const { smsg } = require('../lib/myfunc');
 const logger = require('../lib/logger');
 
-// Known stable Baileys web protocol version fallback
-const FALLBACK_BAILEYS_VERSION = [2, 3000, 1041589577];
+// Known stable Baileys web protocol version fallback (latest active build)
+const FALLBACK_BAILEYS_VERSION = [2, 3000, 1043857760];
 
 class WhatsAppSession extends EventEmitter {
     constructor(sessionId, userId, phoneNumber, authFolder) {
@@ -42,9 +43,24 @@ class WhatsAppSession extends EventEmitter {
     }
 
     /**
-     * Resolves WhatsApp Web protocol version safely with offline fallback
+     * Resolves WhatsApp Web protocol version safely with multi-tiered fallback
      */
     async getVersion() {
+        try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 4000);
+            const res = await fetch('https://raw.githubusercontent.com/WhiskeySockets/Baileys/master/src/Defaults/baileys-version.json', {
+                signal: controller.signal
+            });
+            clearTimeout(timer);
+            if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data?.version) && data.version.length === 3) {
+                    return data.version;
+                }
+            }
+        } catch (_) {}
+
         try {
             const fetched = await fetchLatestBaileysVersion();
             if (fetched && Array.isArray(fetched.version)) {
@@ -96,15 +112,15 @@ class WhatsAppSession extends EventEmitter {
             this.sock = makeWASocket({
                 version,
                 printQRInTerminal: false,
-                browser: ["Ubuntu", "Chrome", "20.0.04"],
+                browser: Browsers ? Browsers.ubuntu('Chrome') : ["Ubuntu", "Chrome", "22.04.4"],
                 logger: pino({ level: 'silent' }),
                 auth: {
                     creds: state.creds,
                     keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
                 },
-                connectTimeoutMs: 60000,
-                defaultQueryTimeoutMs: 60000,
-                keepAliveIntervalMs: 30000,
+                connectTimeoutMs: process.env.NODE_ENV === 'test' ? 3000 : 60000,
+                defaultQueryTimeoutMs: process.env.NODE_ENV === 'test' ? 3000 : 60000,
+                keepAliveIntervalMs: process.env.NODE_ENV === 'test' ? 5000 : 30000,
                 emitOwnEvents: false,
                 retryRequestDelayMs: 250
             });
@@ -144,6 +160,7 @@ class WhatsAppSession extends EventEmitter {
                     else if (statusCode === DisconnectReason.badSession) reasonText = 'Data sesi corrupt (500)';
                     else if (statusCode === DisconnectReason.connectionReplaced) reasonText = 'Koneksi ditimpa sesi lain (440)';
                     else if (statusCode === 429) reasonText = 'Terkena batasan frekuensi / rate limit (429)';
+                    else if (statusCode === 405) reasonText = 'Versi protokol WhatsApp kedaluwarsa atau ditolak server (405)';
                     else if (statusCode) reasonText = `Error Code ${statusCode}`;
 
                     this.lastDisconnectReason = { reason: reasonText, statusCode };
@@ -221,29 +238,52 @@ class WhatsAppSession extends EventEmitter {
     }
 
     /**
+     * Waits for WebSocket handshake to complete and socket to open
+     */
+    async waitForSocketOpen(timeoutMs = (process.env.NODE_ENV === 'test' ? 800 : 8000)) {
+        if (this.sock?.ws?.isOpen) return true;
+        const start = Date.now();
+        return new Promise((resolve) => {
+            const interval = setInterval(() => {
+                if (this.sock?.ws?.isOpen) {
+                    clearInterval(interval);
+                    resolve(true);
+                } else if (!this.sock || Date.now() - start > timeoutMs) {
+                    clearInterval(interval);
+                    resolve(false);
+                }
+            }, 100);
+            if (interval && interval.unref) interval.unref();
+        });
+    }
+
+    /**
      * Requests pairing code for phone number
      */
     async requestPairingCode() {
-        if (!this.sock) {
-            await this.connect();
-        }
-        if (!this.sock) return null;
-        if (this.sock.authState?.creds?.registered) return null;
-
         const cleanPhone = this.phoneNumber ? String(this.phoneNumber).replace(/[^0-9]/g, '') : '';
         if (!cleanPhone || cleanPhone.length < 8) {
             logger.warn('WHATSAPP', `[${this.sessionId}] Invalid phone number for pairing: "${this.phoneNumber}"`);
             return null;
         }
 
+        if (!this.sock || !this.sock.ws?.isOpen) {
+            if (!this.sock) {
+                await this.connect();
+            }
+            const isReady = await this.waitForSocketOpen(8000);
+            if (!isReady || !this.sock?.ws?.isOpen) {
+                logger.warn('WHATSAPP', `[${this.sessionId}] Socket connection is not open yet; pairing code request deferred.`);
+                return null;
+            }
+        }
+
+        if (this.sock.authState?.creds?.registered) return null;
+
         try {
             logger.info('WHATSAPP', `[${this.sessionId}] Requesting pairing code for: ${cleanPhone}...`);
-            let code;
-            try {
-                code = await this.sock.requestPairingCode(cleanPhone, "NELLSBOT");
-            } catch (_) {
-                code = await this.sock.requestPairingCode(cleanPhone);
-            }
+            // Use standard Baileys Crockford Base32 generator (avoid non-Crockford custom codes like NELLSBOT)
+            const code = await this.sock.requestPairingCode(cleanPhone);
 
             if (code) {
                 const formatted = code.match(/.{1,4}/g)?.join("-") || code;
@@ -253,7 +293,11 @@ class WhatsAppSession extends EventEmitter {
             }
             return null;
         } catch (err) {
-            logger.error('WHATSAPP', `[${this.sessionId}] Failed to request pairing code`, err);
+            if (err?.message?.includes('Connection Closed') || err?.output?.statusCode === 428) {
+                logger.warn('WHATSAPP', `[${this.sessionId}] Connection closed during pairing request. Socket will reconnect automatically.`);
+            } else {
+                logger.error('WHATSAPP', `[${this.sessionId}] Failed to request pairing code`, err);
+            }
             return null;
         }
     }
@@ -305,6 +349,13 @@ class WhatsAppSession extends EventEmitter {
             return;
         }
 
+        // WhatsApp rejected protocol version (405) - wait 5s then reconnect with refreshed version
+        if (statusCode === 405) {
+            logger.warn('WHATSAPP', `[${this.sessionId}] WhatsApp rejected protocol version (405). Waiting 5s before reconnecting...`);
+            this.reconnectTimer = setTimeout(() => this.connect(), 5000);
+            return;
+        }
+
         // Rate limit (429) - wait 45-60 seconds to avoid WhatsApp IP/account block
         if (statusCode === 429) {
             const delay = 45000 + Math.floor(Math.random() * 15000);
@@ -339,6 +390,9 @@ class WhatsAppSession extends EventEmitter {
         if (this.sock) {
             try {
                 this.sock.ev.removeAllListeners();
+                if (this.sock.ws) {
+                    try { this.sock.ws.close(); } catch (_) {}
+                }
                 this.sock.end(undefined);
             } catch (_) {}
             this.sock = null;

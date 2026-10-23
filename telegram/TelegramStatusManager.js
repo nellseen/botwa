@@ -61,12 +61,15 @@ class TelegramStatusManager {
             try {
                 current.lastEditTime = now;
                 current.lastText = text;
-                await bot.editMessageText(text, {
+                const editOpts = {
                     chat_id: chatId,
                     message_id: current.messageId,
-                    parse_mode: options.parse_mode || 'Markdown',
-                    reply_markup: options.reply_markup
-                });
+                    parse_mode: options.parse_mode || 'Markdown'
+                };
+                if (options.reply_markup && options.reply_markup.inline_keyboard) {
+                    editOpts.reply_markup = { inline_keyboard: options.reply_markup.inline_keyboard };
+                }
+                await bot.editMessageText(text, editOpts);
                 return current.messageId;
             } catch (err) {
                 const errMsg = err?.response?.body?.description || err?.message || '';
@@ -75,8 +78,10 @@ class TelegramStatusManager {
                     return current.messageId;
                 }
 
-                // If message to edit was deleted by user or expired, fallback to sending a new one
-                console.warn(chalk.yellow(`[TelegramStatusManager] Edit failed (${errMsg}), sending new message for ${mapKey}`));
+                // If message to edit cannot be edited or was deleted, fallback to sending a new one
+                if (!errMsg.includes("message can't be edited") && !errMsg.includes('message to edit not found')) {
+                    console.warn(chalk.yellow(`[TelegramStatusManager] Edit notice (${errMsg}), sending new message for ${mapKey}`));
+                }
             }
         }
 

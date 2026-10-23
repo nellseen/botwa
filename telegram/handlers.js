@@ -153,7 +153,7 @@ class TelegramHandlers {
                     await this.bot.editMessageText(txt, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
                 } catch(_) {}
             } else {
-                await statusManager.setStatus(this.bot, chatId, 'dashboard', txt, { ...MAIN_KEYBOARD });
+                await statusManager.setStatus(this.bot, chatId, 'dashboard', txt);
             }
             return;
         }
@@ -292,8 +292,7 @@ class TelegramHandlers {
                 this.bot,
                 chatId,
                 operationKey,
-                `🔄 *Menyiapkan Sesi Baru*\n\nNomor: \`${phone}\`\nStatus: *Inisialisasi koneksi...*\n_Mohon tunggu pairing code digenerate..._`,
-                MAIN_KEYBOARD
+                `🔄 *Menyiapkan Sesi Baru*\n\nNomor: \`${phone}\`\nStatus: *Inisialisasi koneksi...*\n_Mohon tunggu pairing code digenerate..._`
             );
 
             const session = await this.sessionManager.createSession(chatId, phone);
@@ -520,7 +519,7 @@ class TelegramHandlers {
                 await this.bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
             } catch (_) {}
         } else {
-            await statusManager.setStatus(this.bot, chatId, 'dashboard', text, { ...MAIN_KEYBOARD });
+            await statusManager.setStatus(this.bot, chatId, 'dashboard', text);
         }
     }
 }

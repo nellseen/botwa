@@ -371,7 +371,8 @@ async function bootstrap() {
     logger.info('STARTUP', 'Starting NellsBotBase Multi-Session System...');
 
     // Start HTTP Server
-    await startServer(3000, '0.0.0.0');
+    const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+    await startServer(port, '0.0.0.0');
 
     // Initialize Telegram Bot
     const bot = initTelegramBot();
