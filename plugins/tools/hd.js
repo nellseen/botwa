@@ -92,9 +92,9 @@ module.exports = {
     command: ["hd"],
     description: "Upscale gambar via Pixelcut API",
     run: async (context) => {
-        const { sock, m, args, prefix, mime, qmsg, botName, isPremium, reply } = context;
+        const { sock, m, args, prefix, mime, qmsg, botName, isPremium, isCreator, isOwner, reply } = context;
 
-        if (!isPremium) {
+        if (!isPremium && !isCreator && !isOwner) {
             return sendMenuStyle(sock, m, context, "Premium Tools", [
                 "> Status : *Akses ditolak*",
                 "> Fitur HD khusus user premium*",

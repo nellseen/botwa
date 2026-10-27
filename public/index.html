@@ -885,7 +885,7 @@
           return;
         }
 
-        container.innerHTML = sessions.map(sess => {
+        const nextMarkup = sessions.map(sess => {
           const phone = escapeHtml(sess.phoneNumber || 'Belum diatur');
           const sessionId = escapeHtml(sess.sessionId);
           return `
@@ -912,6 +912,9 @@
             </div>
           `;
         }).join('');
+        // Polling should not tear down the session list (and disturb focus/scroll)
+        // when the server returned the same data.
+        if (container.innerHTML !== nextMarkup) container.innerHTML = nextMarkup;
 
       } catch (err) {
         container.innerHTML = `<div class="text-center py-4 text-red-400 text-xs">Gagal memuat sesi: ${escapeHtml(err.message)}</div>`;
