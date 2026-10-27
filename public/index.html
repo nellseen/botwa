@@ -14,7 +14,6 @@
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
   
   <!-- Tailwind CSS CDN for high-end utility styling -->
-  <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -42,6 +41,7 @@
       }
     }
   </script>
+  <script src="https://cdn.tailwindcss.com" defer></script>
   <style>
     /* Smooth GPU-accelerated scrolling and layout */
     html {
@@ -311,7 +311,7 @@
                 <!-- Chat Message 3: User sends phone number -->
                 <div class="flex justify-end">
                   <div class="bg-emerald-600/90 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-[85%] sm:max-w-md shadow-md">
-                    <p class="font-mono text-sm">62895400835519</p>
+                    <p class="font-mono text-sm">628123456789</p>
                     <span class="text-[10px] text-emerald-200 block text-right mt-1">12:01</span>
                   </div>
                 </div>
@@ -327,7 +327,7 @@
                       🔵 PAIRING CODE WHATSAPP
                     </p>
                     <p class="text-xs text-slate-300 mb-2.5">
-                      Nomor: <span class="font-mono text-white">62895400835519</span>
+                      Nomor: <span class="font-mono text-white">628123456789</span>
                     </p>
                     
                     <!-- Code Box with Copy Indicator -->
@@ -409,18 +409,25 @@
               </div>
             </div>
 
+            <form id="admin-token-form" class="flex flex-col sm:flex-row gap-2 mb-6" autocomplete="off">
+              <label class="sr-only" for="admin-api-token">API admin token</label>
+              <input id="admin-api-token" type="password" autocomplete="off" placeholder="API admin token untuk mengelola sesi" class="flex-1 bg-slate-950 border border-slate-700/80 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500" />
+              <button type="submit" class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold">Simpan selama sesi browser</button>
+              <button id="clear-admin-token" type="button" class="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs">Hapus token</button>
+            </form>
+
             <!-- Add Number & Instant Pairing Code Form -->
             <div class="bg-[#111726] p-5 sm:p-6 rounded-2xl border border-slate-800 mb-6">
               <h3 class="text-sm font-bold text-white mb-1 flex items-center gap-2">
                 <span class="text-emerald-400">➕</span> Tautkan Nomor WhatsApp Baru (Pairing Code Instan)
               </h3>
-              <p class="text-xs text-slate-400 mb-4">Masukkan nomor WhatsApp (contoh: <code class="text-amber-300">62895400835519</code>). Pairing code 8-digit akan langsung digenerate tanpa scan QR.</p>
+              <p class="text-xs text-slate-400 mb-4">Masukkan nomor WhatsApp dengan kode negara. Pairing code akan digenerate setelah koneksi disiapkan.</p>
               
               <form id="form-create-session" class="flex flex-col sm:flex-row gap-3">
                 <input 
                   type="text" 
                   id="input-phone-number" 
-                  placeholder="Contoh: 62895400835519" 
+                  placeholder="Contoh: 628123456789"
                   class="flex-1 bg-slate-950 border border-slate-700/80 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
                   required
                 />
@@ -781,6 +788,20 @@
     }
 
     // Helper: status badge rendering
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+    }
+
+    const ADMIN_TOKEN_KEY = 'nellsbot_admin_token';
+    const adminTokenInput = document.getElementById('admin-api-token');
+    if (adminTokenInput) adminTokenInput.value = sessionStorage.getItem(ADMIN_TOKEN_KEY) || '';
+    async function adminFetch(url, options = {}) {
+      const headers = new Headers(options.headers || {});
+      const token = sessionStorage.getItem(ADMIN_TOKEN_KEY);
+      if (token) headers.set('Authorization', `Bearer ${token}`);
+      return fetch(url, { ...options, headers });
+    }
+
     function renderStatusBadge(status) {
       if (status === 'ONLINE') {
         return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
@@ -817,7 +838,7 @@
               <span class="animate-ping absolute inline-flex h-full w-full rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-red-400'} opacity-75"></span>
               <span class="relative inline-flex rounded-full h-2.5 w-2.5 ${isOnline ? 'bg-emerald-500' : 'bg-red-500'}"></span>
             </span>
-            <span>Server: <strong class="${isOnline ? 'text-emerald-400' : 'text-red-400'} font-medium">${data.status} (${data.version})</strong></span>
+            <span>Server: <strong class="${isOnline ? 'text-emerald-400' : 'text-red-400'} font-medium">${escapeHtml(data.status)} (${escapeHtml(data.version)})</strong></span>
           `;
         }
 
@@ -846,7 +867,8 @@
       if (!container) return;
 
       try {
-        const res = await fetch('/api/sessions');
+        const res = await adminFetch('/api/sessions');
+        if (res.status === 401 || res.status === 503) throw new Error('Masukkan API admin token yang benar untuk membuka daftar sesi.');
         if (!res.ok) throw new Error('API Error');
         const data = await res.json();
         const sessions = data.sessions || [];
@@ -864,35 +886,35 @@
         }
 
         container.innerHTML = sessions.map(sess => {
-          const phone = sess.phoneNumber || 'Belum diatur';
+          const phone = escapeHtml(sess.phoneNumber || 'Belum diatur');
+          const sessionId = escapeHtml(sess.sessionId);
           return `
-            <div id="session-card-${sess.sessionId}" class="p-4 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-slate-700/80 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div id="session-card-${sessionId}" class="p-4 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-slate-700/80 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <div class="flex items-center gap-2 mb-1">
                   <span class="font-mono font-bold text-white text-sm">${phone}</span>
-                  ${renderStatusBadge(sess.status)}
+                  ${renderStatusBadge(escapeHtml(sess.status))}
                 </div>
                 <div class="text-[11px] text-slate-400 font-mono">
-                  <span>ID: ${sess.sessionId}</span>
-                  ${sess.pairingCode ? `<span class="ml-2 text-amber-300 font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-400/20">Code: ${sess.pairingCode}</span>` : ''}
+                  <span>ID: ${sessionId}</span>
                 </div>
               </div>
               <div class="flex items-center gap-2 flex-wrap">
                 ${sess.status === 'ONLINE' ? `
-                  <button onclick="handleSessionAction('${sess.sessionId}', 'disconnect')" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition-colors">Putuskan</button>
+                  <button onclick="handleSessionAction('${sessionId}', 'disconnect')" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition-colors">Putuskan</button>
                 ` : `
-                  <button onclick="handleSessionAction('${sess.sessionId}', 'connect')" class="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold transition-colors">Sambungkan</button>
-                  <button onclick="handleSessionAction('${sess.sessionId}', 'pair')" class="px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-xs font-semibold transition-colors">Pairing Code</button>
+                  <button onclick="handleSessionAction('${sessionId}', 'connect')" class="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold transition-colors">Sambungkan</button>
+                  <button onclick="handleSessionAction('${sessionId}', 'pair')" class="px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-xs font-semibold transition-colors">Pairing Code</button>
                 `}
-                <button onclick="handleSessionAction('${sess.sessionId}', 'reset')" class="px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20 text-xs font-medium transition-colors" title="Reset autentikasi dan pairing ulang">Reset</button>
-                <button onclick="handleSessionAction('${sess.sessionId}', 'delete')" class="px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-medium transition-colors">Hapus</button>
+                <button onclick="handleSessionAction('${sessionId}', 'reset')" class="px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20 text-xs font-medium transition-colors" title="Reset autentikasi dan pairing ulang">Reset</button>
+                <button onclick="handleSessionAction('${sessionId}', 'delete')" class="px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-medium transition-colors">Hapus</button>
               </div>
             </div>
           `;
         }).join('');
 
       } catch (err) {
-        container.innerHTML = `<div class="text-center py-4 text-red-400 text-xs">Gagal memuat sesi: ${err.message}</div>`;
+        container.innerHTML = `<div class="text-center py-4 text-red-400 text-xs">Gagal memuat sesi: ${escapeHtml(err.message)}</div>`;
       }
     }
 
@@ -912,7 +934,7 @@
           method = 'DELETE';
         }
 
-        const res = await fetch(endpoint, { method });
+        const res = await adminFetch(endpoint, { method });
         const data = await res.json();
 
         if (data.pairingCode) {
@@ -949,7 +971,7 @@
         submitBtn.innerHTML = `<span>Menghubungkan...</span>`;
 
         try {
-          const res = await fetch('/api/sessions/create', {
+          const res = await adminFetch('/api/sessions/create', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId: 'web_dashboard', phoneNumber: phone })
@@ -985,6 +1007,19 @@
     }
 
     // Refresh button
+    const tokenForm = document.getElementById('admin-token-form');
+    if (tokenForm) tokenForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      sessionStorage.setItem(ADMIN_TOKEN_KEY, adminTokenInput.value.trim());
+      loadSessions();
+    });
+    const clearTokenButton = document.getElementById('clear-admin-token');
+    if (clearTokenButton) clearTokenButton.addEventListener('click', () => {
+      sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+      if (adminTokenInput) adminTokenInput.value = '';
+      loadSessions();
+    });
+
     const refreshBtn = document.getElementById('btn-refresh-dashboard');
     if (refreshBtn) {
       refreshBtn.addEventListener('click', () => {

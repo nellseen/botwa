@@ -1,6 +1,6 @@
 # NellsBotBase - Multi-Session WhatsApp Bot
 
-NellsBotBase adalah base WhatsApp Bot modern dengan arsitektur **Multi-Session & Multi-User** berbasis Node.js dan Baileys. Bot ini sepenuhnya dikendalikan menggunakan **Telegram Bot Dashboard**, memungkinkan Anda mengelola banyak nomor WhatsApp sekaligus (Unlimited Sessions) tanpa perlu merestart server.
+NellsBotBase adalah base WhatsApp Bot modern dengan arsitektur **Multi-Session & Multi-User** berbasis Node.js dan Baileys. Bot ini dikendalikan menggunakan **Telegram Bot Dashboard**, memungkinkan pengelolaan beberapa nomor WhatsApp tanpa perlu merestart server. Batas default 100 sesi dapat diatur melalui `MAX_SESSIONS`.
 
 Proyek ini telah dikonfigurasi penuh dan dioptimalkan menggunakan **PNPM** (`"packageManager": "pnpm@9.15.4"`) untuk instalasi dependensi yang jauh lebih cepat, hemat disk, dan deterministik.
 
@@ -9,7 +9,7 @@ Proyek ini telah dikonfigurasi penuh dan dioptimalkan menggunakan **PNPM** (`"pa
 ## 🌟 Fitur Utama
 
 - **⚡ Full PNPM Support**: Didukung oleh Corepack dan PNPM package manager untuk manajemen dependensi yang cepat dan stabil.
-- **📱 Multi-Session & Multi-User**: Jalankan puluhan hingga ratusan nomor WhatsApp secara bersamaan dalam satu backend.
+- **📱 Multi-Session & Multi-User**: Jalankan beberapa nomor WhatsApp secara bersamaan dengan batas sesi yang dapat dikonfigurasi.
 - **🤖 Telegram Dashboard Control**: Tambah nomor baru via Pairing Code, hapus, putus (disconnect), dan pantau seluruh sesi WhatsApp melalui bot Telegram (Reply & Inline Keyboard).
 - **🟢 Realtime Status Monitoring**: Dapatkan notifikasi status sesi WhatsApp secara langsung (🟢 Online, 🔵 Pairing, 🟡 Reconnecting, 🔴 Offline).
 - **🎵 Built-in Fast Music Downloader (`/mp3`, `/play`, `/lagu`)**: Download & streaming audio cepat berbasis Pure Node.js (SoundCloud V2 API, Siputzx API, serta YouTube link parser) lengkap dengan thumbnail preview dan metadata artis.
@@ -71,20 +71,24 @@ Buka file `.env` dan masukkan Telegram Bot Token Anda:
 ```env
 # Telegram Bot Token dari @BotFather
 TELEGRAM_BOT_TOKEN=1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ
+API_ADMIN_TOKEN=buat-secret-acak-minimal-32-karakter
 ```
+
+`API_ADMIN_TOKEN` wajib diisi untuk mengakses endpoint pengelolaan sesi, daftar plugin, dan log. Dashboard web meminta token ini dan menyimpannya di `sessionStorage` tab browser aktif; token hilang saat tab ditutup. Endpoint status ringkas tetap dapat dibaca publik. Jangan gunakan contoh token atau kirim token melalui URL.
+
+Buat nilai acak dengan `openssl rand -hex 32`, lalu masukkan hasilnya ke `.env`. `MAX_SESSIONS` membatasi jumlah sesi aktif yang ditampung server (default 100, maksimum 1000).
 
 ---
 
-### 5. Konfigurasi Owner & Bot (`control/settings.js`)
+### 5. Konfigurasi Owner & Bot (`.env`)
 
-Sesuaikan data pemilik bot di file `control/settings.js`:
+Atur nomor owner melalui `OWNER_NUMBER` atau `OWNER_NUMBERS` (format angka dengan kode negara). Tidak ada nomor owner bawaan; akun bot tetap dapat menjalankan perintah owner pada sesi miliknya.
 
-```javascript
-global.botname = "NellsBotBase"
-global.botversion = "v1.0"
-global.botdev = "NellsBotBase"
-global.owner = ["62895400835519"] // Ganti dengan nomor WhatsApp Owner (format 628xxx)
-global.session = "sessions"
+```env
+BOT_NAME=NellsBotBase
+BOT_VERSION=v1.0
+OWNER_NUMBER=628123456789
+SESSION_FOLDER=sessions
 ```
 
 ---
@@ -110,14 +114,16 @@ Backend web server dan dashboard WhatsApp akan aktif di port **3000** (URL: `htt
 1. Buka Bot Telegram Anda di aplikasi Telegram.
 2. Kirim perintah `/start` untuk membuka **Dashboard Menu**.
 3. Klik menu **➕ Tambah Nomor** pada keyboard.
-4. Masukkan nomor WhatsApp yang ingin Anda tautkan (contoh: `62895400835519` tanpa spasi atau tanda `+`).
+4. Masukkan nomor WhatsApp yang ingin Anda tautkan (format angka dengan kode negara, tanpa spasi atau tanda `+`).
 5. Bot Telegram akan langsung mengirimkan **8-digit Pairing Code**.
 6. Buka aplikasi WhatsApp di HP Anda:
    - Pilih menu **Titik Tiga (⋮) / Pengaturan** > **Perangkat Tertaut (Linked Devices)**.
    - Pilih **Tautkan Perangkat** > **Tautkan dengan nomor telepon saja**.
    - Masukkan 8 digit kode pairing yang dikirim dari Telegram.
 7. Setelah tersambung, nomor tersebut langsung aktif menjadi bot WhatsApp!
-8. Anda dapat menambahkan nomor lain tanpa batasan (Multi-Session).
+8. Anda dapat menambahkan nomor lain hingga batas `MAX_SESSIONS` yang diatur server.
+
+Untuk dashboard web, masukkan nilai `API_ADMIN_TOKEN` pada kolom token admin di panel kontrol. Simpan hanya pada browser perangkat admin; gunakan HTTPS melalui reverse proxy saat dashboard diakses dari jaringan.
 
 Gunakan menu **🟢 Status Online** atau **📱 Nomor Saya** di Telegram untuk memeriksa status, restart sesi, memutus koneksi (disconnect), atau menghapus sesi.
 

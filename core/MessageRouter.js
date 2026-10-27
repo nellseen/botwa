@@ -1,5 +1,6 @@
 const nellsbot = require('../nellsbot');
 const plugins = require('../lib/plugins');
+const config = require('../lib/config');
 
 class MessageRouter {
     /**
@@ -17,7 +18,7 @@ class MessageRouter {
                 return;
             }
 
-            const isCreator = [sock?.user?.id, ...(global.owner || [])]
+            const isCreator = [sock?.user?.id, ...config.owners]
                 .map(v => v ? v.replace(/[^0-9]/g, '') + '@s.whatsapp.net' : '')
                 .includes(m?.sender);
 
@@ -62,7 +63,7 @@ class MessageRouter {
             }
 
             // 2. Extract command to verify against plugin registry
-            const prefix = global.prefix || '/';
+            const prefix = config.prefix;
             let cmdName = '';
             if (rawText.startsWith(prefix)) {
                 cmdName = rawText.slice(prefix.length).trim().split(/ +/)[0].toLowerCase();

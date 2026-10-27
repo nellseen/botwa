@@ -6,6 +6,7 @@
 
 const { generateWAMessageFromContent } = require("@itsliaaa/baileys");
 const { categorySections } = require("../../lib/menu");
+const config = require("../../lib/config");
 
 function formatUptime(seconds) {
     let remaining = Math.floor(Number(seconds) || 0);
@@ -43,7 +44,7 @@ async function sendMenuStyle(sock, m, context, uptime) {
                 degreesLatitude: 0,
                 degreesLongitude: 0,
                 name: botName,
-                address: global.namaown || "WhatsApp Bot",
+                address: config.ownerName,
                 jpegThumbnail: thumb ? thumb.toString("base64") : ""
             },
             contentText: `\`「 ${botName} 」\``,

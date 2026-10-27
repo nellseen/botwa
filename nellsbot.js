@@ -5,27 +5,48 @@
 // ===================================================
 
 require('./control/settings');
+const config = require('./lib/config');
 const fs = require('fs');
+const path = require('path');
 const sharp = require('sharp');
 const util = require('util');
 const { spawn, exec, execSync } = require('child_process');
 const plugins = require('./lib/plugins');
 const { resolveSenderJid } = require('./lib/target');
 const logger = require('./lib/logger');
+const { readJsonCached } = require('./lib/jsonCache');
 
 // Cache group metadata for 2 minutes to prevent Baileys 429 rate limits
 const groupMetaCache = new Map();
+const socketCacheIds = new WeakMap();
+let nextSocketCacheId = 1;
+function parseJson(value, fallback = {}) {
+    try { return JSON.parse(value || '{}'); } catch (_) { return fallback; }
+}
 async function getCachedGroupMetadata(sock, chatJid) {
     if (!sock || !chatJid) return null;
-    const cached = groupMetaCache.get(chatJid);
+    let socketId = socketCacheIds.get(sock);
+    if (!socketId) {
+        socketId = nextSocketCacheId++;
+        socketCacheIds.set(sock, socketId);
+    }
+    const cacheKey = `${socketId}:${chatJid}`;
+    const cached = groupMetaCache.get(cacheKey);
     const now = Date.now();
     if (cached && (now - cached.timestamp < 120000)) {
+        groupMetaCache.delete(cacheKey);
+        groupMetaCache.set(cacheKey, cached);
         return cached.data;
+    }
+    for (const [key, value] of groupMetaCache) {
+        if (now - value.timestamp >= 120000) groupMetaCache.delete(key);
     }
     try {
         const meta = await sock.groupMetadata(chatJid);
         if (meta) {
-            groupMetaCache.set(chatJid, { data: meta, timestamp: now });
+            groupMetaCache.delete(cacheKey);
+            groupMetaCache.set(cacheKey, { data: meta, timestamp: now });
+            while (groupMetaCache.size > 5000) groupMetaCache.delete(groupMetaCache.keys().next().value);
         }
         return meta;
     } catch (_) {
@@ -101,13 +122,13 @@ module.exports = async (sock, m, chatUpdate, store, session) => {
             m.mtype === "buttonsResponseMessage" ? m.message.buttonsResponseMessage.selectedButtonId :
             m.mtype === "listResponseMessage" ? m.message.listResponseMessage.singleSelectReply.selectedRowId :
             m.mtype === "templateButtonReplyMessage" ? m.message.templateButtonReplyMessage.selectedId :
-            m.mtype === "interactiveResponseMessage" ? JSON.parse(m.msg?.nativeFlowResponseMessage?.paramsJson || '{}').id :
+            m.mtype === "interactiveResponseMessage" ? parseJson(m.msg?.nativeFlowResponseMessage?.paramsJson).id :
             m.mtype === "templateButtonReplyMessage" ? m.msg.selectedId :
             m.mtype === "messageContextInfo" ? m.message.buttonsResponseMessage?.selectedButtonId || m.message.listResponseMessage?.singleSelectReply.selectedRowId || m.text : ""
         ) || "";
 
-        const premium = JSON.parse(fs.readFileSync("./lib/database/premium.json"));
-        const OWNER_PATH = "./lib/database/owner.json";
+        const premium = readJsonCached(path.join(__dirname, 'lib/database/premium.json'), []);
+        const OWNER_PATH = path.join(__dirname, 'lib/database/owner.json');
         const sender = m.key.fromMe
             ? sock.user.id.split(":")[0] || sock.user.id
             : m.key.participant || m.key.remoteJid;
@@ -126,7 +147,7 @@ module.exports = async (sock, m, chatUpdate, store, session) => {
         }
         const senderNumber = sender.split('@')[0];
         const budy = (typeof m.text === 'string' ? m.text : '');
-        const prefix = global.prefix || '/';
+        const prefix = config.prefix;
         const from = m.key.remoteJid;
         const isGroup = from.endsWith("@g.us");
         const isChannel = from.endsWith("@newsletter");
@@ -141,12 +162,12 @@ module.exports = async (sock, m, chatUpdate, store, session) => {
             return number ? number + '@s.whatsapp.net' : '';
         };
 
-        const ownerbot = JSON.parse(fs.readFileSync(OWNER_PATH));
+        const ownerbot = readJsonCached(OWNER_PATH, []);
         const sameAccessJid = value => normalizeAccessJid(value) === accessSender;
         const isSimulation = Boolean(m?.isSimulation || sock?.isSimulation || session?.isSimulation);
         const isPremium = isSimulation ? false : premium.some(sameAccessJid);
         const isOwner = isSimulation ? false : ownerbot.some(sameAccessJid);
-        const isCreator = isSimulation ? false : [botNumber, ...global.owner].some(sameAccessJid);
+        const isCreator = isSimulation ? false : [botNumber, ...config.owners].some(sameAccessJid);
         const bodyTrim = (body || '').trim();
         const prefixMatch = bodyTrim.startsWith(prefix) ? prefix : null;
         let command = '';
@@ -231,11 +252,11 @@ module.exports = async (sock, m, chatUpdate, store, session) => {
         if (!sock.public && !isCreator) return;
 
         const thumb = await getThumbnail();
-        const botName = global.botname || "itsliaaa baileys base";
-        const botVersion = global.botversion || "v1.0";
-        const botDev = global.botdev || "NellsBotBase";
-        const botCategory = global.botcategory || 1;
-        const totalCommands = global.totalcmd || plugins.countCommands();
+        const botName = config.botName;
+        const botVersion = config.botVersion;
+        const botDev = config.botDev;
+        const botCategory = config.botCategory;
+        const totalCommands = plugins.countCommands();
         const memoryUsage = `${Math.round(process.memoryUsage().rss / 1024 / 1024)} MB`;
 
         const context = {

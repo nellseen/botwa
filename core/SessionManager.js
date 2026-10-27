@@ -17,12 +17,18 @@ class SessionManager extends EventEmitter {
         super();
         this.sessionsDir = sessionsDir;
         this.sessions = new Map(); // sessionId -> WhatsAppSession
+        const configuredMaxSessions = Number(process.env.MAX_SESSIONS);
+        this.maxSessions = Number.isInteger(configuredMaxSessions) && configuredMaxSessions > 0
+            ? Math.min(configuredMaxSessions, 1000)
+            : 100;
         this.metadataPath = path.join(sessionsDir, 'metadata.json');
         this.metadataBackupPath = path.join(sessionsDir, 'metadata.json.bak');
 
         if (!fs.existsSync(sessionsDir)) {
-            fs.mkdirSync(sessionsDir, { recursive: true });
+            fs.mkdirSync(sessionsDir, { recursive: true, mode: 0o700 });
         }
+        this.sessionsRoot = fs.realpathSync(sessionsDir);
+        try { fs.chmodSync(this.sessionsRoot, 0o700); } catch (_) {}
         this.loadMetadata();
     }
 
@@ -30,11 +36,13 @@ class SessionManager extends EventEmitter {
         if (fs.existsSync(this.metadataPath)) {
             try {
                 this.metadata = JSON.parse(fs.readFileSync(this.metadataPath, 'utf8'));
+                if (!this.metadata || typeof this.metadata !== 'object' || Array.isArray(this.metadata)) this.metadata = {};
             } catch (err) {
                 logger.error('SESSION_MANAGER', 'Corrupt metadata.json, attempting backup restore', err);
                 if (fs.existsSync(this.metadataBackupPath)) {
                     try {
                         this.metadata = JSON.parse(fs.readFileSync(this.metadataBackupPath, 'utf8'));
+                        if (!this.metadata || typeof this.metadata !== 'object' || Array.isArray(this.metadata)) this.metadata = {};
                         logger.info('SESSION_MANAGER', 'Metadata restored from backup successfully');
                     } catch (_) {
                         this.metadata = {};
@@ -51,9 +59,12 @@ class SessionManager extends EventEmitter {
     saveMetadata() {
         try {
             const data = JSON.stringify(this.metadata, null, 2);
-            // Write to backup first for atomic safety
-            fs.writeFileSync(this.metadataBackupPath, data, 'utf8');
-            fs.writeFileSync(this.metadataPath, data, 'utf8');
+            const tempPath = `${this.metadataPath}.${process.pid}.tmp`;
+            const backupTemp = `${this.metadataBackupPath}.${process.pid}.tmp`;
+            fs.writeFileSync(tempPath, data, { encoding: 'utf8', mode: 0o600 });
+            fs.writeFileSync(backupTemp, data, { encoding: 'utf8', mode: 0o600 });
+            fs.renameSync(backupTemp, this.metadataBackupPath);
+            fs.renameSync(tempPath, this.metadataPath);
         } catch (err) {
             logger.error('SESSION_MANAGER', 'Failed to save session metadata', err);
         }
@@ -63,27 +74,45 @@ class SessionManager extends EventEmitter {
         logger.info('SESSION_MANAGER', 'Restoring saved sessions...');
         this.migrateLegacySession();
 
-        for (const [sessionId, data] of Object.entries(this.metadata)) {
-            try {
-                // Restore session object in memory with shouldConnect=false so sessions aren't forcibly spun up all at once
-                await this.createSession(data.userId, data.phoneNumber, sessionId, false);
-            } catch (err) {
-                logger.warn('SESSION_MANAGER', `Skipping session ${sessionId}: ${err.message}`);
+        const entries = Object.entries(this.metadata);
+        const configuredConcurrency = Number(process.env.SESSION_RESTORE_CONCURRENCY);
+        const concurrency = Math.max(1, Math.min(10, Number.isFinite(configuredConcurrency) && configuredConcurrency > 0 ? Math.floor(configuredConcurrency) : 3));
+        for (let index = 0; index < entries.length; index += concurrency) {
+            if (this.sessions.size >= this.maxSessions) {
+                logger.warn('SESSION_MANAGER', `Session restore stopped at configured limit (${this.maxSessions}).`);
+                break;
             }
+            const batch = entries.slice(index, index + concurrency);
+            await Promise.all(batch.map(async ([sessionId, data]) => {
+                try {
+                    const userId = String(data.userId || 'default_user');
+                    if (!/^[A-Za-z0-9_-]{1,64}$/.test(userId) || !/^[A-Za-z0-9_-]{1,64}$/.test(sessionId)) {
+                        throw new Error('ID user atau sesi tidak valid.');
+                    }
+                    const authFolder = path.resolve(this.sessionsRoot, userId, sessionId);
+                    if (!this.isWithinSessionsDir(authFolder) || !fs.existsSync(authFolder)) {
+                        logger.warn('SESSION_MANAGER', `Skipping session ${sessionId}: folder autentikasi tidak ditemukan.`);
+                        return;
+                    }
+                    await this.createSession(data.userId, data.phoneNumber, sessionId, true);
+                } catch (err) {
+                    logger.warn('SESSION_MANAGER', `Skipping session ${sessionId}: ${err.message}`);
+                }
+            }));
         }
         logger.info('SESSION_MANAGER', `Restored ${this.sessions.size} active sessions.`);
     }
 
     migrateLegacySession() {
-        const legacyPath = path.join(process.cwd(), 'session');
+        const legacyPath = path.join(__dirname, '..', 'session');
         if (fs.existsSync(legacyPath) && fs.statSync(legacyPath).isDirectory()) {
             logger.info('SESSION_MANAGER', 'Legacy ./session folder found. Migrating to session pool...');
             const legacyUserId = "999999999";
             const sessionId = `sess_${uuidv4().replace(/-/g, '').substring(0, 16)}`;
-            const newAuthFolder = path.join(this.sessionsDir, legacyUserId, sessionId);
+            const newAuthFolder = path.join(this.sessionsRoot, legacyUserId, sessionId);
 
             try {
-                fs.mkdirSync(path.dirname(newAuthFolder), { recursive: true });
+                fs.mkdirSync(path.dirname(newAuthFolder), { recursive: true, mode: 0o700 });
                 fs.renameSync(legacyPath, newAuthFolder);
 
                 this.metadata[sessionId] = {
@@ -106,6 +135,13 @@ class SessionManager extends EventEmitter {
     async createSession(userId, phoneNumber = '', explicitSessionId = null, shouldConnect = true) {
         const cleanPhone = phoneNumber ? String(phoneNumber).replace(/[^0-9]/g, '') : '';
         const userStr = String(userId || 'default_user');
+        const sessionId = explicitSessionId || `sess_${uuidv4().replace(/-/g, '').substring(0, 16)}`;
+        if (cleanPhone && (cleanPhone.length < 8 || cleanPhone.length > 15)) throw new Error('Nomor WhatsApp harus berisi 8 sampai 15 digit.');
+        if (!/^[A-Za-z0-9_-]{1,64}$/.test(userStr) || !/^[A-Za-z0-9_-]{1,64}$/.test(sessionId)) {
+            throw new Error('ID user atau sesi tidak valid.');
+        }
+        if (this.sessions.has(sessionId)) throw new Error(`Sesi ${sessionId} sudah aktif.`);
+        if (this.sessions.size >= this.maxSessions) throw new Error(`Batas sesi tercapai (${this.maxSessions}).`);
 
         // Prevent duplicate numbers across different sessions
         if (cleanPhone) {
@@ -116,12 +152,19 @@ class SessionManager extends EventEmitter {
             }
         }
 
-        const sessionId = explicitSessionId || `sess_${uuidv4().replace(/-/g, '').substring(0, 16)}`;
-        const authFolder = path.join(this.sessionsDir, userStr, sessionId);
+        const userFolder = path.resolve(this.sessionsRoot, userStr);
+        if (!this.isWithinSessionsDir(userFolder)) throw new Error('Lokasi sesi di luar direktori yang diizinkan.');
+        if (!fs.existsSync(userFolder)) fs.mkdirSync(userFolder, { recursive: true, mode: 0o700 });
+        if (!this.isWithinSessionsDir(fs.realpathSync(userFolder))) throw new Error('Lokasi sesi di luar direktori yang diizinkan.');
+        try { fs.chmodSync(userFolder, 0o700); } catch (_) {}
+        const authFolder = path.resolve(userFolder, sessionId);
+        if (!this.isWithinSessionsDir(authFolder)) throw new Error('Lokasi sesi di luar direktori yang diizinkan.');
 
         if (!fs.existsSync(authFolder)) {
-            fs.mkdirSync(authFolder, { recursive: true });
+            fs.mkdirSync(authFolder, { recursive: true, mode: 0o700 });
         }
+        if (!this.isWithinSessionsDir(fs.realpathSync(authFolder))) throw new Error('Lokasi sesi di luar direktori yang diizinkan.');
+        try { fs.chmodSync(authFolder, 0o700); } catch (_) {}
 
         this.metadata[sessionId] = {
             sessionId,
@@ -152,6 +195,11 @@ class SessionManager extends EventEmitter {
 
     getSession(sessionId) {
         return this.sessions.get(sessionId) || null;
+    }
+
+    isWithinSessionsDir(candidate) {
+        const relative = path.relative(this.sessionsRoot, path.resolve(candidate));
+        return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
     }
 
     getUserSessions(userId) {
@@ -216,7 +264,7 @@ class SessionManager extends EventEmitter {
             this.sessions.delete(sessionId);
 
             // Delete auth folder safely
-            if (fs.existsSync(session.authFolder)) {
+            if (fs.existsSync(session.authFolder) && this.isWithinSessionsDir(fs.realpathSync(session.authFolder))) {
                 try {
                     fs.rmSync(session.authFolder, { recursive: true, force: true });
                 } catch (err) {

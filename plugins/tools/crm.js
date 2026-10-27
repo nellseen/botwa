@@ -8,6 +8,7 @@ const fs = require("fs");
 const path = require("path");
 const { generateWAMessageFromContent } = require("@itsliaaa/baileys");
 const { categorySections } = require("../../lib/menu");
+const config = require("../../lib/config");
 
 function unwrap(content) {
     if (!content || typeof content !== "object") return content;
@@ -88,7 +89,7 @@ function typeNameFromContent(content) {
 }
 
 function buildRelayCodeFile(content) {
-    const dir = path.join(process.cwd(), "debug");
+    const dir = path.join(__dirname, "../../debug");
     fs.mkdirSync(dir, { recursive: true });
     const filename = `${typeNameFromContent(content)}.js`;
     const filepath = path.join(dir, filename);
@@ -138,7 +139,7 @@ async function sendMenuStyle(sock, m, ctx, title, lines) {
                 degreesLatitude: 0,
                 degreesLongitude: 0,
                 name: botName,
-                address: global.namaown || "WhatsApp Bot",
+                address: config.ownerName,
                 jpegThumbnail: thumb ? thumb.toString("base64") : ""
             },
             contentText: `\`「 ${botName} 」\``,

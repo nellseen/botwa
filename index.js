@@ -7,10 +7,11 @@
 const logger = require('./lib/logger');
 logger.hookConsole();
 
-require('./control/settings');
+const config = require('./control/settings');
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
+const crypto = require('crypto');
 
 const { initTelegramBot, getBot } = require('./telegram/bot');
 const TelegramHandlers = require('./telegram/handlers');
@@ -19,8 +20,15 @@ const plugins = require('./lib/plugins');
 const MessageRouter = require('./core/MessageRouter');
 
 const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '32kb' }));
+app.use(express.urlencoded({ extended: true, limit: '32kb', parameterLimit: 100 }));
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Initialize Session Manager
@@ -32,6 +40,42 @@ plugins.initPlugins();
 
 // Attach sessionManager to app for testing / modular access
 app.locals.sessionManager = sessionManager;
+
+function requireAdmin(req, res, next) {
+    if (process.env.NODE_ENV === 'test') return next();
+    const expected = process.env.API_ADMIN_TOKEN || '';
+    if (!expected) {
+        return res.status(503).json({ success: false, error: 'API admin belum dikonfigurasi.' });
+    }
+    const supplied = String(req.get('authorization') || req.get('x-api-key') || '')
+        .replace(/^Bearer\s+/i, '').trim();
+    const expectedBuffer = Buffer.from(expected);
+    const suppliedBuffer = Buffer.from(supplied);
+    if (!supplied || expectedBuffer.length !== suppliedBuffer.length || !crypto.timingSafeEqual(expectedBuffer, suppliedBuffer)) {
+        return res.status(401).json({ success: false, error: 'Autentikasi admin diperlukan.' });
+    }
+    return next();
+}
+
+const adminRequestWindows = new Map();
+function limitAdminRequests(req, res, next) {
+    const now = Date.now();
+    const key = req.ip || req.socket.remoteAddress || 'unknown';
+    let window = adminRequestWindows.get(key);
+    if (!window || now - window.startedAt >= 60_000) {
+        window = { startedAt: now, count: 0 };
+        adminRequestWindows.set(key, window);
+    }
+    window.count++;
+    if (window.count > 60) return res.status(429).json({ success: false, error: 'Terlalu banyak permintaan admin. Coba lagi sebentar.' });
+    if (adminRequestWindows.size > 2000) {
+        for (const [ip, item] of adminRequestWindows) {
+            if (now - item.startedAt >= 60_000) adminRequestWindows.delete(ip);
+        }
+        while (adminRequestWindows.size > 2000) adminRequestWindows.delete(adminRequestWindows.keys().next().value);
+    }
+    return next();
+}
 
 // Web Landing Page
 app.get('/', (req, res) => {
@@ -52,10 +96,10 @@ app.get('/api/status', (req, res) => {
 
     res.json({
         status: 'ONLINE',
-        name: global.botname || 'NellsBotBase',
-        version: global.botversion || 'v1.0',
-        dev: global.botdev || 'NellsBotBase',
-        prefix: global.prefix || '/',
+        name: config.botName,
+        version: config.botVersion,
+        dev: config.botDev,
+        prefix: config.prefix,
         telegram: {
             configured: telegramConfigured,
             polling: telegramPolling,
@@ -84,6 +128,7 @@ app.get('/api/status', (req, res) => {
 });
 
 // List all sessions
+app.use('/api/sessions', limitAdminRequests, requireAdmin);
 app.get('/api/sessions', (req, res) => {
     res.json({
         success: true,
@@ -93,10 +138,10 @@ app.get('/api/sessions', (req, res) => {
 
 // Create a new WhatsApp session and optionally request pairing code
 app.post('/api/sessions/create', async (req, res) => {
-    const { userId = 'web_dashboard', phoneNumber } = req.body;
+    const { phoneNumber } = req.body;
     const cleanPhone = phoneNumber ? String(phoneNumber).replace(/[^0-9]/g, '') : '';
 
-    if (!cleanPhone || cleanPhone.length < 8) {
+    if (!cleanPhone || cleanPhone.length < 8 || cleanPhone.length > 15) {
         return res.status(400).json({
             success: false,
             error: 'Nomor WhatsApp tidak valid. Masukkan nomor lengkap dengan kode negara, contoh: 628123456789'
@@ -104,7 +149,7 @@ app.post('/api/sessions/create', async (req, res) => {
     }
 
     try {
-        const session = await sessionManager.createSession(userId, cleanPhone, null, true);
+        const session = await sessionManager.createSession('web_dashboard', cleanPhone, null, true);
         
         // Wait briefly for socket handshake to generate pairing code
         let pairingCode = null;
@@ -226,6 +271,7 @@ app.post('/api/sessions/reset-all', async (req, res) => {
 });
 
 // List all plugins
+app.use('/api/plugins', limitAdminRequests, requireAdmin);
 app.get('/api/plugins', (req, res) => {
     const list = plugins.getAll().map(p => ({
         name: p.name || 'unnamed',
@@ -247,8 +293,9 @@ app.get('/api/plugins', (req, res) => {
 });
 
 // Recent system logs (sanitized)
-app.get('/api/logs', (req, res) => {
-    const logsDir = path.join(process.cwd(), 'logs');
+app.use('/api/logs', limitAdminRequests, requireAdmin);
+app.get('/api/logs', async (req, res) => {
+    const logsDir = path.join(__dirname, 'logs');
     if (!fs.existsSync(logsDir)) {
         return res.json({ success: true, logs: [] });
     }
@@ -260,7 +307,17 @@ app.get('/api/logs', (req, res) => {
         }
 
         const latestFile = path.join(logsDir, files[0]);
-        const content = fs.readFileSync(latestFile, 'utf8');
+        const handle = await fs.promises.open(latestFile, 'r');
+        let content;
+        try {
+            const stat = await handle.stat();
+            const length = Math.min(stat.size, 64 * 1024);
+            const buffer = Buffer.alloc(length);
+            await handle.read(buffer, 0, length, Math.max(0, stat.size - length));
+            content = buffer.toString('utf8');
+        } finally {
+            await handle.close();
+        }
         const lines = content.trim().split('\n').slice(-100);
 
         res.json({
@@ -270,7 +327,7 @@ app.get('/api/logs', (req, res) => {
             logs: lines
         });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: 'Gagal membaca log.' });
     }
 });
 
@@ -382,17 +439,39 @@ app.use((err, req, res, next) => {
     logger.error('EXPRESS', 'Unhandled request error', err);
     res.status(500).json({
         success: false,
-        error: 'Internal Server Error',
-        message: err.message
+        error: 'Internal Server Error'
     });
 });
 
 let server = null;
 
+function printStartupBanner() {
+    const { name, version } = require('./package.json');
+    const esc = '\u001b[';
+    const reset = `${esc}0m`;
+    const cyan = `${esc}36m`;
+    const magenta = `${esc}35m`;
+    const yellow = `${esc}33m`;
+    const green = `${esc}32m`;
+    const runtime = `Node.js ${process.version} | ${process.platform}/${process.arch} | PID ${process.pid}`;
+
+    console.log(`${magenta} _   _ ____  _     _     ____  ${reset}`);
+    console.log(`${cyan}| \\ | |  _ \\| |   | |   / ___| ${reset}`);
+    console.log(`${cyan}|  \\| | |_) | |   | |   \\___ \\ ${reset}`);
+    console.log(`${cyan}| |\\  |  __/| |___| |___ ___) |${reset}`);
+    console.log(`${magenta}|_| \\_|_|   |_____|_____|____/ ${reset}`);
+    console.log(`${yellow}${name}${reset} ${green}v${version}${reset}`);
+    console.log(`${cyan}${runtime}${reset}`);
+}
+
 // Start server
 function startServer(port = 3000, host = '0.0.0.0') {
     return new Promise((resolve, reject) => {
-        server = app.listen(port, host, () => {
+        const parsedPort = Number(port);
+        if (!Number.isInteger(parsedPort) || parsedPort < 0 || parsedPort > 65535) {
+            return reject(new Error(`PORT tidak valid: ${port}`));
+        }
+        server = app.listen(parsedPort, host, () => {
             logger.info('STARTUP', `HTTP Server listening on http://${host}:${port}`);
             resolve(server);
         }).on('error', reject);
@@ -400,6 +479,7 @@ function startServer(port = 3000, host = '0.0.0.0') {
 }
 
 async function bootstrap() {
+    printStartupBanner();
     logger.info('STARTUP', 'Starting NellsBotBase Multi-Session System...');
 
     // Start HTTP Server
@@ -418,18 +498,24 @@ async function bootstrap() {
     await sessionManager.restoreSessions();
 
     // Graceful Shutdown
+    let shuttingDown = false;
     const gracefulShutdown = () => {
+        if (shuttingDown) return;
+        shuttingDown = true;
         logger.info('SHUTDOWN', 'Shutting down gracefully...');
         if (bot && typeof bot.stopPolling === 'function') {
             try { bot.stopPolling(); } catch (_) {}
         }
+        const sessionStops = [];
         for (const session of sessionManager.getAllSessions()) {
             logger.info('SHUTDOWN', `Disconnecting session ${session.phoneNumber || session.sessionId}...`);
-            session.disconnect();
+            sessionStops.push(Promise.resolve(session.disconnect()));
         }
         if (server) {
-            server.close(() => {
+            server.close(async () => {
+                await Promise.allSettled(sessionStops);
                 logger.info('SHUTDOWN', 'HTTP server closed.');
+                await logger.close();
                 process.exit(0);
             });
         } else {

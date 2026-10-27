@@ -1,3 +1,6 @@
+packages:
+  - '.'
+
 allowBuilds:
   '@ffmpeg-installer/linux-arm64': true
   '@itsliaaa/baileys@git+https://github.com/itsliaaa/baileys.git#b1c3b684b64e584d7d6f2e51220cc5e8d69f148b': true

@@ -5,6 +5,7 @@
 // ===================================================
 
 const { resolveTarget, readList, writeList, verifyWhatsAppNumber } = require('../../lib/target');
+const path = require('path');
 
 module.exports = {
     name: "addprem",
@@ -14,7 +15,7 @@ module.exports = {
     run: async (context) => {
         const { sock, m, command, args, q, prefix, isCreator, reply, groupMetadata } = context;
 
-        const premPath = "./lib/database/premium.json";
+        const premPath = path.join(__dirname, '../../lib/database/premium.json');
 
         if (command === "addprem") {
             if (!isCreator) return reply("*❗ AKSES DI TOLAK!!*");

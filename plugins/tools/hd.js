@@ -7,6 +7,7 @@
 const { generateWAMessageFromContent, downloadContentFromMessage } = require("@itsliaaa/baileys");
 const sharp = require("sharp");
 const { categorySections } = require("../../lib/menu");
+const config = require("../../lib/config");
 
 const API = "https://pixel.stenly.id/upscale/upload";
 
@@ -74,7 +75,7 @@ async function sendMenuStyle(sock, m, ctx, title, lines) {
                 degreesLatitude: 0,
                 degreesLongitude: 0,
                 name: botName,
-                address: global.namaown || "WhatsApp Bot",
+                address: config.ownerName,
                 jpegThumbnail: thumb ? thumb.toString('base64') : ''
             },
             contentText,

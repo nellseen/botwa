@@ -5,6 +5,7 @@
 // ===================================================
 
 const { resolveTarget, readList, writeList, verifyWhatsAppNumber } = require('../../lib/target');
+const path = require('path');
 
 module.exports = {
     name: "addown",
@@ -14,7 +15,7 @@ module.exports = {
     run: async (context) => {
         const { sock, m, command, args, q, prefix, isCreator, reply, groupMetadata } = context;
 
-        const ownerPath = "./lib/database/owner.json";
+        const ownerPath = path.join(__dirname, '../../lib/database/owner.json');
 
         if (command === "addowner" || command === "addown") {
             if (!isCreator) return reply(`*khusus owner!*`);

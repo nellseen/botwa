@@ -7,8 +7,10 @@
 const fs = require("fs");
 const path = require("path");
 const { generateWAMessageFromContent } = require("@itsliaaa/baileys");
+const { readJsonCached, invalidateJsonCache } = require('../../lib/jsonCache');
+const config = require('../../lib/config');
 
-const DATABASE = path.join(process.cwd(), "lib/database/antilink.json");
+const DATABASE = path.join(__dirname, "../../lib/database/antilink.json");
 
 // Comprehensive URL & Domain Matchers
 const URL_PROTOCOL_REGEX = /(?:https?:\/\/|ftp:\/\/|www\.)[^\s/$.?#].[^\s]*/i;
@@ -33,23 +35,17 @@ function containsAnyLink(text) {
 }
 
 function readState() {
-    try {
-        if (!fs.existsSync(DATABASE)) {
-            fs.mkdirSync(path.dirname(DATABASE), { recursive: true });
-            fs.writeFileSync(DATABASE, "{}", "utf8");
-            return {};
-        }
-        const data = JSON.parse(fs.readFileSync(DATABASE, "utf8"));
-        return data && typeof data === "object" ? data : {};
-    } catch (_) {
-        return {};
-    }
+    const data = readJsonCached(DATABASE, {});
+    return data && typeof data === "object" && !Array.isArray(data) ? data : {};
 }
 
 function writeState(state) {
     try {
         fs.mkdirSync(path.dirname(DATABASE), { recursive: true });
-        fs.writeFileSync(DATABASE, JSON.stringify(state, null, 2));
+        const tempPath = `${DATABASE}.${process.pid}.tmp`;
+        fs.writeFileSync(tempPath, JSON.stringify(state, null, 2), { encoding: 'utf8', mode: 0o600 });
+        fs.renameSync(tempPath, DATABASE);
+        invalidateJsonCache(DATABASE);
     } catch (err) {
         console.error("[ANTILINK] Error writing database:", err);
     }
@@ -73,7 +69,7 @@ async function menuReply(sock, m, context, title, lines) {
                     degreesLatitude: 0,
                     degreesLongitude: 0,
                     name: botName,
-                    address: global.namaown || "WhatsApp Bot",
+                    address: config.ownerName,
                     jpegThumbnail: thumb ? thumb.toString("base64") : ""
                 },
                 contentText: `\`「 ${botName} 」\``,
@@ -200,7 +196,7 @@ error: ${deleteError.message}`);
             return reply("⚠️ *Gagal Mengaktifkan Antilink!*\nBot harus menjadi *Admin Grup* terlebih dahulu agar memiliki izin untuk menghapus pesan anggota lain.");
         }
 
-        const state = readState();
+        const state = { ...readState() };
         state[m.chat] = {
             enabled: action === "on",
             updatedAt: new Date().toISOString()

@@ -20,6 +20,9 @@ const fs = require('fs');
 const { smsg } = require('../lib/myfunc');
 const logger = require('../lib/logger');
 
+// Keep Baileys warnings and errors visible while suppressing verbose protocol logs.
+const baileysLogger = pino({ level: 'warn' });
+
 // Known stable Baileys web protocol version fallback (latest active build)
 const FALLBACK_BAILEYS_VERSION = [2, 3000, 1043857760];
 
@@ -31,7 +34,7 @@ class WhatsAppSession extends EventEmitter {
         this.phoneNumber = phoneNumber ? String(phoneNumber).replace(/[^0-9]/g, '') : '';
         this.authFolder = authFolder;
         this.sock = null;
-        this.store = makeInMemoryStore({ logger: pino({ level: 'silent' }) });
+        this.store = makeInMemoryStore({ logger: baileysLogger });
         this.status = 'OFFLINE';
         this.pairingCode = null;
         this.reconnectAttempts = 0;
@@ -49,15 +52,18 @@ class WhatsAppSession extends EventEmitter {
         try {
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), 4000);
-            const res = await fetch('https://raw.githubusercontent.com/WhiskeySockets/Baileys/master/src/Defaults/baileys-version.json', {
-                signal: controller.signal
-            });
-            clearTimeout(timer);
-            if (res.ok) {
-                const data = await res.json();
-                if (Array.isArray(data?.version) && data.version.length === 3) {
-                    return data.version;
+            try {
+                const res = await fetch('https://raw.githubusercontent.com/WhiskeySockets/Baileys/master/src/Defaults/baileys-version.json', {
+                    signal: controller.signal
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (Array.isArray(data?.version) && data.version.length === 3) {
+                        return data.version;
+                    }
                 }
+            } finally {
+                clearTimeout(timer);
             }
         } catch (_) {}
 
@@ -113,10 +119,10 @@ class WhatsAppSession extends EventEmitter {
                 version,
                 printQRInTerminal: false,
                 browser: Browsers ? Browsers.ubuntu('Chrome') : ["Ubuntu", "Chrome", "22.04.4"],
-                logger: pino({ level: 'silent' }),
+                logger: baileysLogger,
                 auth: {
                     creds: state.creds,
-                    keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
+                    keys: makeCacheableSignalKeyStore(state.keys, baileysLogger)
                 },
                 connectTimeoutMs: process.env.NODE_ENV === 'test' ? 3000 : 60000,
                 defaultQueryTimeoutMs: process.env.NODE_ENV === 'test' ? 3000 : 60000,
@@ -171,7 +177,7 @@ class WhatsAppSession extends EventEmitter {
                         this.cleanup();
                     } else if (statusCode === DisconnectReason.connectionReplaced) {
                         this.updateStatus('CONFLICT', { reason: reasonText, statusCode });
-                        this.disconnect();
+                        this.disconnect({ updateStatus: false });
                     } else if (this.manualDisconnect) {
                         this.updateStatus('OFFLINE', { reason: 'Disconnect manual' });
                     } else {
@@ -313,6 +319,7 @@ class WhatsAppSession extends EventEmitter {
      */
     resetAuthState() {
         logger.info('WHATSAPP', `[${this.sessionId}] Resetting auth state in ${this.authFolder}...`);
+        this.disconnect({ updateStatus: false });
         try {
             if (fs.existsSync(this.authFolder)) {
                 fs.rmSync(this.authFolder, { recursive: true, force: true });
@@ -387,30 +394,47 @@ class WhatsAppSession extends EventEmitter {
     /**
      * Cleanly disconnects the session
      */
-    disconnect() {
+    disconnect({ updateStatus = true } = {}) {
         this.manualDisconnect = true;
+        this.socketGeneration++;
         if (this.reconnectTimer) {
             clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
         }
+        let closePromise = Promise.resolve();
         if (this.sock) {
+            const ws = this.sock.ws;
+            if (ws && typeof ws.once === 'function') {
+                closePromise = new Promise(resolve => {
+                    const onClose = () => {
+                        clearTimeout(timer);
+                        resolve();
+                    };
+                    const timer = setTimeout(() => {
+                        if (typeof ws.removeListener === 'function') ws.removeListener('close', onClose);
+                        resolve();
+                    }, 1500);
+                    ws.once('close', onClose);
+                });
+            }
             try {
                 this.sock.ev.removeAllListeners();
-                if (this.sock.ws) {
-                    try { this.sock.ws.close(); } catch (_) {}
+                if (ws) {
+                    try { ws.close(); } catch (_) {}
                 }
                 this.sock.end(undefined);
             } catch (_) {}
             this.sock = null;
         }
-        this.updateStatus('OFFLINE');
+        if (updateStatus) this.updateStatus('OFFLINE');
+        return closePromise;
     }
 
     /**
      * Full cleanup
      */
     cleanup() {
-        this.disconnect();
+        this.disconnect({ updateStatus: false });
         this.removeAllListeners();
     }
 }

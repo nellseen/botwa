@@ -5,6 +5,7 @@
 // ===================================================
 
 const { generateWAMessageFromContent } = require("@itsliaaa/baileys");
+const config = require("../../lib/config");
 
 module.exports = {
     name: "menu",
@@ -105,7 +106,7 @@ _*Tekan tombol di bawah untuk melihat semua menu*_`;
                         degreesLatitude: 0,
                         degreesLongitude: 0,
                         name: botName,
-                        address: global.namaown || "WhatsApp Bot",
+                        address: config.ownerName,
                         jpegThumbnail: thumb ? thumb.toString('base64') : ''
                     },
                     contentText,
@@ -119,8 +120,8 @@ _*Tekan tombol di bawah untuk melihat semua menu*_`;
             });
         }
 
-        const totalCmds = plugins ? plugins.countCommands() : (global.totalcmd || 8);
-        const totalCats = catKeys.length || (global.botcategory || 1);
+        const totalCmds = plugins ? plugins.countCommands() : 8;
+        const totalCats = catKeys.length || config.botCategory;
 
         const contentText = `\`「 ${botName} 」\``;
         const footerText = `\`「 Info bot 」\`
@@ -143,7 +144,7 @@ _*Tekan tombol di bawah untuk melihat semua menu*_`;
                     degreesLatitude: 0,
                     degreesLongitude: 0,
                     name: botName,
-                    address: global.namaown || "WhatsApp Bot",
+                    address: config.ownerName,
                     jpegThumbnail: thumb ? thumb.toString('base64') : ''
                 },
                 contentText,
