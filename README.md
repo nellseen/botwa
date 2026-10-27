@@ -89,7 +89,10 @@ BOT_NAME=NellsBotBase
 BOT_VERSION=v1.0
 OWNER_NUMBER=628123456789
 SESSION_FOLDER=sessions
+PAIRING_CODE=NELLSBOT
 ```
+
+`PAIRING_CODE` mengatur kode pairing custom WhatsApp. Gunakan tepat 8 karakter alfanumerik (A–Z dan 0–9), tanpa tanda hubung; bot akan menambahkan pemisah saat menampilkan kode. Jika variabel ini tidak diatur, bot memakai `NELLSBOT`. Jika formatnya tidak valid, bot memberi peringatan dan kembali memakai nilai default.
 
 ---
 

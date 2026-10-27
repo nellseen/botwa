@@ -22,6 +22,7 @@ const logger = require('../lib/logger');
 
 // Keep Baileys warnings and errors visible while suppressing verbose protocol logs.
 const baileysLogger = pino({ level: 'warn' });
+const DEFAULT_CUSTOM_PAIRING_CODE = 'NELLSBOT';
 
 // Known stable Baileys web protocol version fallback (latest active build)
 const FALLBACK_BAILEYS_VERSION = [2, 3000, 1043857760];
@@ -290,8 +291,17 @@ class WhatsAppSession extends EventEmitter {
             logger.info('WHATSAPP', `[${this.sessionId}] Requesting pairing code for: ${cleanPhone}...`);
             let code;
             try {
-                // Utamakan custom pairing code NELLSBOT (fitur khas @itsliaaa/baileys)
-                code = await this.sock.requestPairingCode(cleanPhone, "NELLSBOT");
+                // Custom code Baileys harus tepat 8 karakter alfanumerik.
+                const configuredCode = process.env.PAIRING_CODE?.trim().toUpperCase();
+                const customCode = /^[A-Z0-9]{8}$/.test(configuredCode || '')
+                    ? configuredCode
+                    : DEFAULT_CUSTOM_PAIRING_CODE;
+
+                if (configuredCode && customCode !== configuredCode) {
+                    logger.warn('WHATSAPP', 'PAIRING_CODE harus tepat 8 karakter alfanumerik; memakai kode default.');
+                }
+
+                code = await this.sock.requestPairingCode(cleanPhone, customCode);
             } catch (_) {
                 // Fallback ke kode acak standar jika custom code tidak diterima
                 code = await this.sock.requestPairingCode(cleanPhone);
