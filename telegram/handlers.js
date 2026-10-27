@@ -584,14 +584,26 @@ class TelegramHandlers {
         const memoryUsage = `${Math.round(process.memoryUsage().rss / 1024 / 1024)} MB`;
         const uptime = formatUptime(process.uptime() * 1000);
 
-        const text = `📊 *STATISTIK SISTEM*\n\n` +
-                     `Total WhatsApp Sessions: *${allSessions.length}*\n` +
-                     `🟢 Online: *${onlineCount}*\n` +
-                     `🟡 Connecting: *${connectingCount}*\n` +
-                     `🔵 Pairing: *${pairingCount}*\n` +
-                     `🔴 Offline/Logged Out: *${offlineCount}*\n\n` +
-                     `💻 Uptime Server: *${uptime}*\n` +
-                     `💾 Penggunaan Memori: *${memoryUsage}*`;
+        const rows = [
+            ['Metrik', 'Jumlah'],
+            ['Total sesi', String(allSessions.length)],
+            ['Online', String(onlineCount)],
+            ['Menyambungkan', String(connectingCount)],
+            ['Pairing', String(pairingCount)],
+            ['Offline/Logout', String(offlineCount)],
+            ['Uptime', uptime],
+            ['Memori', memoryUsage]
+        ];
+        const metricWidth = Math.max(...rows.map(([metric]) => metric.length));
+        const valueWidth = Math.max(...rows.map(([, value]) => value.length));
+        const separator = `+${'-'.repeat(metricWidth + 2)}+${'-'.repeat(valueWidth + 2)}+`;
+        const table = rows.map(([metric, value], index) =>
+            `| ${metric.padEnd(metricWidth)} | ${value.padStart(valueWidth)} |${index === 0 ? `\n${separator}` : ''}`
+        );
+        table.unshift(separator);
+        table.push(separator);
+
+        const text = `📊 *STATISTIK SISTEM*\n\n\`\`\`\n${table.join('\n')}\n\`\`\``;
         
         if (messageId) {
             try {
@@ -604,7 +616,8 @@ class TelegramHandlers {
             } catch (_) {}
         } else {
             await statusManager.setStatus(this.bot, chatId, 'dashboard', text, {
-                reply_markup: BACK_TO_MENU
+                reply_markup: BACK_TO_MENU,
+                parse_mode: 'Markdown'
             });
         }
     }
