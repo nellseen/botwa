@@ -503,6 +503,7 @@ async function bootstrap() {
         if (shuttingDown) return;
         shuttingDown = true;
         logger.info('SHUTDOWN', 'Shutting down gracefully...');
+        TelegramHandlers.setServerStatus('OFF');
         if (bot && typeof bot.stopPolling === 'function') {
             try { bot.stopPolling(); } catch (_) {}
         }
@@ -514,6 +515,7 @@ async function bootstrap() {
         if (server) {
             server.close(async () => {
                 await Promise.allSettled(sessionStops);
+                await TelegramHandlers.waitForStatusUpdates();
                 logger.info('SHUTDOWN', 'HTTP server closed.');
                 await logger.close();
                 process.exit(0);

@@ -127,6 +127,22 @@ class TelegramStatusManager {
         }
     }
 
+    async flushPending(bot) {
+        for (const [chatId, entry] of this.statusMap) {
+            if (entry.pendingText === null || entry.pendingText === undefined) continue;
+
+            if (entry.timer) clearTimeout(entry.timer);
+            const text = entry.pendingText;
+            const options = entry.pendingOptions || {};
+            entry.timer = null;
+            entry.pendingText = null;
+            entry.pendingOptions = null;
+            entry.lastEditTime = 0;
+
+            await this.setStatus(bot, chatId, 'dashboard', text, { ...options, force: true });
+        }
+    }
+
     /**
      * Finishes a status operation (edits to final text, optionally auto-deleting after a delay)
      */

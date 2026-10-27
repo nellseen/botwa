@@ -47,10 +47,23 @@ function formatUptime(uptimeMs) {
 }
 
 class TelegramHandlers {
+    static serverStatus = 'ON';
+    static pendingStatusUpdates = new Set();
+
+    static setServerStatus(status) {
+        this.serverStatus = status === 'OFF' ? 'OFF' : 'ON';
+    }
+
+    static async waitForStatusUpdates() {
+        await Promise.allSettled([...this.pendingStatusUpdates]);
+        if (this.bot) await statusManager.flushPending(this.bot);
+    }
+
     static init(sessionManager) {
         const bot = getBot();
         if (!bot) return;
 
+        this.setServerStatus('ON');
         this.sessionManager = sessionManager;
         this.bot = bot;
 
@@ -68,7 +81,8 @@ class TelegramHandlers {
 
                 let text = `${statusEmoji} *WhatsApp Status Update*\n\n` +
                            `📱 *Nomor:* \`${info.phoneNumber || 'Belum diatur'}\`\n` +
-                           `⚡ *Status:* *${info.status}*`;
+                           `⚡ *Status WhatsApp:* *${info.status}*\n` +
+                           `🖥️ *Server Utama:* *${this.serverStatus}*`;
 
                 if (info.reason) {
                     text += `\nℹ️ *Keterangan:* ${info.reason}`;
@@ -84,9 +98,15 @@ class TelegramHandlers {
                 }
 
                 // Update the status message in-place for this session
-                await statusManager.setStatus(bot, info.userId, 'dashboard', text, {
+                const update = statusManager.setStatus(bot, info.userId, 'dashboard', text, {
                     reply_markup: BACK_TO_MENU
                 });
+                this.pendingStatusUpdates.add(update);
+                try {
+                    await update;
+                } finally {
+                    this.pendingStatusUpdates.delete(update);
+                }
             } catch (err) {
                 console.error('Failed to update status in TelegramHandlers:', err);
             }
