@@ -14,7 +14,26 @@ class TelegramStatusManager {
     }
 
     _getKey(chatId, key) {
-        return `${chatId}:${key}`;
+        // Keep one editable status message per chat so session updates and
+        // dashboard actions replace the same message instead of filling the chat.
+        return `${chatId}`;
+    }
+
+    adoptMessage(chatId, messageId, text = '') {
+        if (!chatId || !messageId) return;
+
+        const mapKey = this._getKey(chatId, 'dashboard');
+        const current = this.statusMap.get(mapKey);
+        if (current?.timer) clearTimeout(current.timer);
+
+        this.statusMap.set(mapKey, {
+            messageId,
+            lastText: text,
+            lastEditTime: current?.messageId === messageId ? current.lastEditTime : 0,
+            timer: null,
+            pendingText: null,
+            pendingOptions: null
+        });
     }
 
     /**
@@ -66,9 +85,9 @@ class TelegramStatusManager {
                     message_id: current.messageId,
                     parse_mode: options.parse_mode || 'Markdown'
                 };
-                if (options.reply_markup && options.reply_markup.inline_keyboard) {
-                    editOpts.reply_markup = { inline_keyboard: options.reply_markup.inline_keyboard };
-                }
+                editOpts.reply_markup = options.reply_markup?.inline_keyboard
+                    ? { inline_keyboard: options.reply_markup.inline_keyboard }
+                    : { inline_keyboard: [] };
                 await bot.editMessageText(text, editOpts);
                 return current.messageId;
             } catch (err) {
@@ -157,7 +176,9 @@ class TelegramStatusManager {
      * Clear all tracking for a specific session or user
      */
     clearSession(chatId, sessionId) {
-        const mapKey = this._getKey(chatId, sessionId);
+        // Session-specific status messages are no longer created. Only clear
+        // any legacy per-session entry without dropping the shared chat message.
+        const mapKey = `${chatId}:${sessionId}`;
         const entry = this.statusMap.get(mapKey);
         if (entry?.timer) clearTimeout(entry.timer);
         this.statusMap.delete(mapKey);

@@ -9,18 +9,34 @@ const chalk = require('chalk');
 const statusManager = require('./TelegramStatusManager');
 
 const userStates = new Map();
-const userPromptMessages = new Map(); // chatId -> messageId (for cleaning temporary input prompts)
 const activePairingLocks = new Set();
 
 const MAIN_KEYBOARD = {
     reply_markup: {
-        keyboard: [
-            [{ text: '📱 Nomor Saya' }, { text: '➕ Tambah Nomor' }],
-            [{ text: '🟢 Status Online' }, { text: '🔄 Refresh' }],
-            [{ text: '📊 Statistik' }, { text: '⚙️ Settings' }]
+        inline_keyboard: [
+            [
+                { text: '📱 Nomor Saya', callback_data: 'menu_sessions' },
+                { text: '➕ Tambah Nomor', callback_data: 'menu_add' }
+            ],
+            [
+                { text: '🟢 Status Online', callback_data: 'menu_online' },
+                { text: '🔄 Refresh', callback_data: 'menu_refresh' }
+            ],
+            [
+                { text: '📊 Statistik', callback_data: 'menu_stats' },
+                { text: '⚙️ Settings', callback_data: 'menu_settings' }
+            ]
         ],
-        resize_keyboard: true
     }
+};
+const BACK_TO_MENU = {
+    inline_keyboard: [[{ text: '⬅️ Kembali ke Menu', callback_data: 'menu_home' }]]
+};
+const EMPTY_SESSIONS_KEYBOARD = {
+    inline_keyboard: [
+        [{ text: '➕ Tambah Nomor', callback_data: 'menu_add' }],
+        [{ text: '⬅️ Kembali ke Menu', callback_data: 'menu_home' }]
+    ]
 };
 
 function formatUptime(uptimeMs) {
@@ -68,7 +84,9 @@ class TelegramHandlers {
                 }
 
                 // Update the status message in-place for this session
-                await statusManager.setStatus(bot, info.userId, info.sessionId, text);
+                await statusManager.setStatus(bot, info.userId, 'dashboard', text, {
+                    reply_markup: BACK_TO_MENU
+                });
             } catch (err) {
                 console.error('Failed to update status in TelegramHandlers:', err);
             }
@@ -83,7 +101,9 @@ class TelegramHandlers {
     static async handleStart(msg) {
         const chatId = msg.chat.id;
         const text = `👋 *Selamat datang di NellsBotBase Dashboard!*\n\nID Anda: \`${chatId}\`\nSilahkan gunakan menu di bawah untuk mengelola sesi WhatsApp Anda dengan mudah.`;
-        await this.bot.sendMessage(chatId, text, { parse_mode: 'Markdown', ...MAIN_KEYBOARD });
+        await statusManager.setStatus(this.bot, chatId, 'dashboard', text, {
+            reply_markup: MAIN_KEYBOARD.reply_markup
+        });
     }
 
     static async handleStatus(msg) {
@@ -115,18 +135,16 @@ class TelegramHandlers {
                 break;
             case '➕ Tambah Nomor': {
                 userStates.set(chatId, 'AWAITING_PHONE_NUMBER');
-                const promptMsg = await this.bot.sendMessage(
+                await statusManager.setStatus(
+                    this.bot,
                     chatId,
+                    'dashboard',
                     'Masukkan nomor WhatsApp Anda (contoh: `628123456789`):',
                     {
                         parse_mode: 'Markdown',
-                        reply_markup: {
-                            force_reply: true,
-                            input_field_placeholder: "628..."
-                        }
+                        reply_markup: BACK_TO_MENU
                     }
                 );
-                userPromptMessages.set(chatId, promptMsg.message_id);
                 break;
             }
             case '🔄 Refresh':
@@ -136,7 +154,9 @@ class TelegramHandlers {
                 await this.sendStats(chatId);
                 break;
             case '⚙️ Settings':
-                await this.bot.sendMessage(chatId, '⚙️ *Pengaturan Sesi WhatsApp*\nFitur pengaturan lanjutan per nomor segera hadir.', { parse_mode: 'Markdown', ...MAIN_KEYBOARD });
+                await statusManager.setStatus(this.bot, chatId, 'dashboard', '⚙️ *Pengaturan Sesi WhatsApp*\nFitur pengaturan lanjutan per nomor segera hadir.', {
+                    reply_markup: BACK_TO_MENU
+                });
                 break;
         }
     }
@@ -150,10 +170,19 @@ class TelegramHandlers {
             const txt = '📱 *Nomor Saya*\n\nAnda belum menambahkan nomor satupun.\nSilahkan klik menu *➕ Tambah Nomor*.';
             if (messageId) {
                 try {
-                    await this.bot.editMessageText(txt, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
-                } catch(_) {}
+                    await this.bot.editMessageText(txt, {
+                        chat_id: chatId,
+                        message_id: messageId,
+                        parse_mode: 'Markdown',
+                        reply_markup: EMPTY_SESSIONS_KEYBOARD
+                    });
+                } catch (err) {
+                    console.error('[TELEGRAM UI] Failed to render empty session list:', err.message);
+                }
             } else {
-                await statusManager.setStatus(this.bot, chatId, 'dashboard', txt);
+                await statusManager.setStatus(this.bot, chatId, 'dashboard', txt, {
+                    reply_markup: EMPTY_SESSIONS_KEYBOARD
+                });
             }
             return;
         }
@@ -250,6 +279,9 @@ class TelegramHandlers {
         inlineKeyboard.push([
             { text: '🔄 Refresh Semua', callback_data: `refresh_all` }
         ]);
+        inlineKeyboard.push([
+            { text: '⬅️ Kembali ke Menu', callback_data: 'menu_home' }
+        ]);
 
         if (messageId) {
             try {
@@ -270,29 +302,28 @@ class TelegramHandlers {
     static async handleAddNumber(chatId, text) {
         const phone = text.replace(/[^0-9]/g, '');
         if (!phone) {
-            return this.bot.sendMessage(chatId, '❌ Nomor tidak valid. Silakan gunakan format angka seperti `628123456789`.', { parse_mode: 'Markdown', ...MAIN_KEYBOARD });
+            return statusManager.setStatus(this.bot, chatId, 'dashboard', '❌ Nomor tidak valid. Silakan gunakan format angka seperti `628123456789`.', {
+                reply_markup: BACK_TO_MENU
+            });
         }
 
         if (activePairingLocks.has(phone)) {
-            return this.bot.sendMessage(chatId, '⚠️ Sedang memproses nomor ini. Silahkan tunggu beberapa saat.', MAIN_KEYBOARD);
+            return statusManager.setStatus(this.bot, chatId, 'dashboard', '⚠️ Sedang memproses nomor ini. Silahkan tunggu beberapa saat.', {
+                reply_markup: BACK_TO_MENU
+            });
         }
         activePairingLocks.add(phone);
 
         // Delete temporary input prompt to keep the conversation clean
-        const promptMsgId = userPromptMessages.get(chatId);
-        if (promptMsgId) {
-            try { await this.bot.deleteMessage(chatId, promptMsgId); } catch (_) {}
-            userPromptMessages.delete(chatId);
-        }
-
-        const operationKey = `add_${phone}`;
+        const operationKey = 'dashboard';
 
         try {
             await statusManager.setStatus(
                 this.bot,
                 chatId,
                 operationKey,
-                `🔄 *Menyiapkan Sesi Baru*\n\nNomor: \`${phone}\`\nStatus: *Inisialisasi koneksi...*\n_Mohon tunggu pairing code digenerate..._`
+                `🔄 *Menyiapkan Sesi Baru*\n\nNomor: \`${phone}\`\nStatus: *Inisialisasi koneksi...*\n_Mohon tunggu pairing code digenerate..._`,
+                { reply_markup: BACK_TO_MENU }
             );
 
             const session = await this.sessionManager.createSession(chatId, phone);
@@ -310,16 +341,21 @@ class TelegramHandlers {
                                          `3. Pilih *Tautkan dengan nomor telepon saja*\n` +
                                          `4. Masukkan kode 8 digit di atas.`;
 
-                        await statusManager.setStatus(this.bot, chatId, operationKey, pairText);
+                        await statusManager.setStatus(this.bot, chatId, operationKey, pairText, {
+                            reply_markup: BACK_TO_MENU
+                        });
                     } else if (session.status === 'ONLINE') {
                         const onlineText = `🟢 *Nomor \`${phone}\` sudah ONLINE dan siap digunakan!*`;
-                        await statusManager.finishStatus(this.bot, chatId, operationKey, onlineText);
+                        await statusManager.finishStatus(this.bot, chatId, operationKey, onlineText, {
+                            reply_markup: BACK_TO_MENU
+                        });
                     } else {
                         await statusManager.setStatus(
                             this.bot,
                             chatId,
                             operationKey,
-                            `⚠️ Gagal generate pairing code untuk \`${phone}\`. Status: *${session.status}*`
+                            `⚠️ Gagal generate pairing code untuk \`${phone}\`. Status: *${session.status}*`,
+                            { reply_markup: BACK_TO_MENU }
                         );
                     }
                 } catch (timeoutErr) {
@@ -335,7 +371,8 @@ class TelegramHandlers {
                 this.bot,
                 chatId,
                 operationKey,
-                `❌ *Gagal menambahkan nomor:* ${err.message}`
+                `❌ *Gagal menambahkan nomor:* ${err.message}`,
+                { reply_markup: BACK_TO_MENU }
             );
         }
     }
@@ -346,6 +383,43 @@ class TelegramHandlers {
         const messageId = query.message.message_id;
 
         if (!data) return;
+
+        console.log(`[TELEGRAM CALLBACK] chat=${chatId} message=${messageId} data=${data}`);
+        statusManager.adoptMessage(chatId, messageId, query.message.text || '');
+
+        if (data.startsWith('menu_')) {
+            await this.bot.answerCallbackQuery(query.id).catch(() => {});
+            switch (data) {
+                case 'menu_home': {
+                    userStates.delete(chatId);
+                    const text = `👋 *Selamat datang di NellsBotBase Dashboard!*\n\nID Anda: \`${chatId}\`\nSilahkan gunakan menu di bawah untuk mengelola sesi WhatsApp Anda dengan mudah.`;
+                    return statusManager.setStatus(this.bot, chatId, 'dashboard', text, MAIN_KEYBOARD);
+                }
+                case 'menu_sessions':
+                case 'menu_online':
+                case 'menu_refresh':
+                    return this.sendDetailedSessions(chatId, messageId);
+                case 'menu_add':
+                    userStates.set(chatId, 'AWAITING_PHONE_NUMBER');
+                    return statusManager.setStatus(
+                        this.bot,
+                        chatId,
+                        'dashboard',
+                        'Masukkan nomor WhatsApp Anda (contoh: `628123456789`):',
+                        { reply_markup: BACK_TO_MENU }
+                    );
+                case 'menu_stats':
+                    return this.sendStats(chatId, messageId);
+                case 'menu_settings':
+                    return statusManager.setStatus(
+                        this.bot,
+                        chatId,
+                        'dashboard',
+                        '⚙️ *Pengaturan Sesi WhatsApp*\nFitur pengaturan lanjutan per nomor segera hadir.',
+                        { reply_markup: BACK_TO_MENU }
+                    );
+            }
+        }
 
         if (data === 'refresh_all' || data === 'list_sessions') {
             await this.bot.answerCallbackQuery(query.id, { text: 'Diperbarui' }).catch(()=>{});
@@ -391,7 +465,8 @@ class TelegramHandlers {
                         {
                             chat_id: chatId,
                             message_id: messageId,
-                            parse_mode: 'Markdown'
+                            parse_mode: 'Markdown',
+                            reply_markup: BACK_TO_MENU
                         }
                     );
                 } catch (_) {}
@@ -414,7 +489,8 @@ class TelegramHandlers {
                                     parse_mode: 'Markdown',
                                     reply_markup: {
                                         inline_keyboard: [
-                                            [{ text: '« Kembali ke Daftar Nomor', callback_data: `list_sessions` }]
+                                            [{ text: '« Kembali ke Daftar Nomor', callback_data: `list_sessions` }],
+                                            [{ text: '⬅️ Kembali ke Menu', callback_data: 'menu_home' }]
                                         ]
                                     }
                                 }
@@ -428,7 +504,8 @@ class TelegramHandlers {
                                     parse_mode: 'Markdown',
                                     reply_markup: {
                                         inline_keyboard: [
-                                            [{ text: '« Kembali ke Daftar Nomor', callback_data: `list_sessions` }]
+                                            [{ text: '« Kembali ke Daftar Nomor', callback_data: `list_sessions` }],
+                                            [{ text: '⬅️ Kembali ke Menu', callback_data: 'menu_home' }]
                                         ]
                                     }
                                 }
@@ -463,7 +540,8 @@ class TelegramHandlers {
                         reply_markup: {
                             inline_keyboard: [
                                 [{ text: '✅ Ya, Hapus Sekarang', callback_data: `confirmdelete_${sessionId}` }],
-                                [{ text: '❌ Batal', callback_data: `view_${sessionId}` }]
+                                [{ text: '❌ Batal', callback_data: `view_${sessionId}` }],
+                                [{ text: '⬅️ Kembali ke Menu', callback_data: 'menu_home' }]
                             ]
                         }
                     }
@@ -486,7 +564,8 @@ class TelegramHandlers {
                         parse_mode: 'Markdown',
                         reply_markup: {
                             inline_keyboard: [
-                                [{ text: '« Kembali ke Daftar Nomor', callback_data: `list_sessions` }]
+                                [{ text: '« Kembali ke Daftar Nomor', callback_data: `list_sessions` }],
+                                [{ text: '⬅️ Kembali ke Menu', callback_data: 'menu_home' }]
                             ]
                         }
                     }
@@ -516,10 +595,17 @@ class TelegramHandlers {
         
         if (messageId) {
             try {
-                await this.bot.editMessageText(text, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
+                await this.bot.editMessageText(text, {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    parse_mode: 'Markdown',
+                    reply_markup: BACK_TO_MENU
+                });
             } catch (_) {}
         } else {
-            await statusManager.setStatus(this.bot, chatId, 'dashboard', text);
+            await statusManager.setStatus(this.bot, chatId, 'dashboard', text, {
+                reply_markup: BACK_TO_MENU
+            });
         }
     }
 }
