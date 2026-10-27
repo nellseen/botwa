@@ -1,36 +1,36 @@
 {
-  "timestamp": "2026-10-23T21:29:47.251Z",
+  "timestamp": "2026-10-27T05:01:43.808Z",
   "overallStatus": "PASSED",
   "stages": [
     {
       "name": "1. Static Test (ESLint)",
       "status": "PASSED",
-      "durationSeconds": 22.91
+      "durationSeconds": 24.18
     },
     {
       "name": "2. Unit Test (Node Test Runner)",
       "status": "PASSED",
-      "durationSeconds": 14.04
+      "durationSeconds": 36.66
     },
     {
       "name": "3. Integration Test (API & Telegram Handlers)",
       "status": "PASSED",
-      "durationSeconds": 181.63
+      "durationSeconds": 38.62
     },
     {
       "name": "4. E2E Test (DOM & UI Lifecycle Automation)",
       "status": "PASSED",
-      "durationSeconds": 43.37
+      "durationSeconds": 44.93
     },
     {
       "name": "5. Load Test (Autocannon Throughput & Latency)",
       "status": "PASSED",
-      "durationSeconds": 34.22
+      "durationSeconds": 26.75
     },
     {
       "name": "6. Build & Compilation Verification",
       "status": "PASSED",
-      "durationSeconds": 2.85
+      "durationSeconds": 9.09
     }
   ]
 }
